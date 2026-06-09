@@ -1,0 +1,130 @@
+import React, { useEffect } from 'react';
+import { Canvas2D } from './components/editor/Canvas2D';
+import { Toolbar } from './components/ui/Toolbar';
+import { PropertiesPanel } from './components/ui/PropertiesPanel';
+import { ValidationPanel } from './components/ui/ValidationPanel';
+import { useI18nStore } from './store/useI18nStore';
+import { useProjectStore } from './store/useProjectStore';
+import { useUIStore } from './store/useUIStore';
+import { ProjectValidator } from './core/validator/ProjectValidator';
+import { Scene3D } from './components/scene3d/Scene3D';
+import { useTheme } from './theme/tokens';
+
+function App() {
+  const { t } = useI18nStore();
+  const project = useProjectStore(state => state.data);
+  const setValidationIssues = useUIStore(state => state.setValidationIssues);
+  const { selectedObjectId, selectedObjectType, setSelectedObject, viewMode } = useUIStore();
+  const deleteWall = useProjectStore(state => state.deleteWall);
+  const deleteArea = useProjectStore(state => state.deleteArea);
+  const deleteOpening = useProjectStore(state => state.deleteOpening);
+
+  const theme = useTheme();
+
+  // Realtime validation effect
+  useEffect(() => {
+    const result = ProjectValidator.validate(project);
+    setValidationIssues(result.issues);
+  }, [project, setValidationIssues]);
+
+  // Keyboard shortcut for Delete
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if user is typing in an input
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+      
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedObjectId && selectedObjectType) {
+        if (selectedObjectType === 'wall') {
+          deleteWall(selectedObjectId);
+          setSelectedObject(null, null);
+        } else if (selectedObjectType === 'area') {
+          deleteArea(selectedObjectId);
+          setSelectedObject(null, null);
+        } else if (selectedObjectType === 'opening') {
+          deleteOpening(selectedObjectId);
+          setSelectedObject(null, null);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedObjectId, selectedObjectType, deleteWall, deleteArea, deleteOpening, setSelectedObject]);
+
+  return (
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', fontFamily: 'sans-serif', background: theme.appBg, color: theme.textPrimary }}>
+      <header style={{ padding: '15px', background: theme.headerBg, color: theme.headerText, fontWeight: 'bold' }}>
+        {t("app.title")}
+      </header>
+      <Toolbar />
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <aside style={{ minWidth: '280px', width: '280px', flexShrink: 0, background: theme.panelBg, borderRight: `1px solid ${theme.panelBorder}`, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+          <div style={{ padding: '10px', background: theme.toolbarBg, borderBottom: `1px solid ${theme.panelBorder}` }}>
+            <h3 style={{ margin: 0, color: theme.textPrimary }}>{t("panel.properties")}</h3>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+            <PropertiesPanel />
+          </div>
+        </aside>
+        
+        <main style={{ 
+          flex: 1, 
+          display: 'grid',
+          gridTemplateColumns: viewMode === 'split' ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+          overflow: 'hidden',
+          backgroundColor: theme.canvasBg
+        }}>
+          <div style={{ 
+            display: viewMode === '3d' ? 'none' : 'block',
+            position: 'relative', 
+            borderRight: viewMode === 'split' ? `2px solid ${theme.panelBorder}` : 'none',
+            minWidth: 0,
+            height: '100%'
+          }}>
+            <Canvas2D />
+          </div>
+          <div style={{ 
+            display: viewMode === '2d' ? 'none' : 'block',
+            position: 'relative',
+            minWidth: 0,
+            height: '100%'
+          }}>
+            <Scene3D />
+          </div>
+        </main>
+        
+        <aside style={{ width: '300px', background: theme.panelBg, borderLeft: `1px solid ${theme.panelBorder}`, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '10px', background: theme.toolbarBg, borderBottom: `1px solid ${theme.panelBorder}` }}>
+            <h3 style={{ margin: 0, color: theme.textPrimary }}>{t("panel.validation")}</h3>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <ValidationPanel />
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
+  constructor(props: any) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error: any) { return { hasError: true, error }; }
+  render() {
+    if (this.state.hasError) {
+      return <div style={{padding: 50, background: 'red', color: 'white', fontSize: 20}}>
+        <h1>Runtime Error</h1>
+        <pre>{this.state.error?.message}</pre>
+        <pre>{this.state.error?.stack}</pre>
+      </div>;
+    }
+    return this.props.children;
+  }
+}
+
+function AppWrapper() {
+  return <ErrorBoundary><App /></ErrorBoundary>;
+}
+
+export default AppWrapper;

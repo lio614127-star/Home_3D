@@ -1,0 +1,7 @@
+export const WORKSPACE_MIN_X = 0;
+export const WORKSPACE_MIN_Z = 0;
+export const WORKSPACE_MAX_X = 40;
+export const WORKSPACE_MAX_Z = 70;
+
+export const WORKSPACE_WIDTH = WORKSPACE_MAX_X - WORKSPACE_MIN_X;
+export const WORKSPACE_DEPTH = WORKSPACE_MAX_Z - WORKSPACE_MIN_Z;
