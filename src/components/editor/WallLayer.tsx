@@ -1,7 +1,7 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { Line, Group, Circle } from 'react-konva';
 import { IWall } from '../../types';
-import { projectToCanvas, getOffsetFromStartOnWall, normalizeCoord, getWallCenterline, getWallRenderLine } from '../../core/geometry/math';
+import { projectToCanvas, getOffsetFromStartOnWall, normalizeCoord, getWallCenterline, getWallRenderLine, isPointOnSegment } from '../../core/geometry/math';
 import { resolveBestSnap } from '../../core/geometry/snap';
 import { useUIStore } from '../../store/useUIStore';
 import { useProjectStore } from '../../store/useProjectStore';
@@ -14,6 +14,34 @@ interface Props {
   zoom?: number;
 }
 
+const getLineIntersection = (p1x: number, p1y: number, p2x: number, p2y: number, p3x: number, p3y: number, p4x: number, p4y: number) => {
+  const d = (p1x - p2x) * (p3y - p4y) - (p1y - p2y) * (p3x - p4x);
+  if (Math.abs(d) < 0.0001) return null;
+  const t = ((p1x - p3x) * (p3y - p4y) - (p1y - p3y) * (p3x - p4x)) / d;
+  return { x: p1x + t * (p2x - p1x), y: p1y + t * (p2y - p1y) };
+};
+
+const getWallOffsetLines = (w: IWall, allWalls: IWall[], scale: number) => {
+   const renderLine = getWallRenderLine(w, allWalls);
+   const sX = renderLine.start.x * scale;
+   const sY = renderLine.start.z * scale;
+   const eX = renderLine.end.x * scale;
+   const eY = renderLine.end.z * scale;
+   const dx = eX - sX;
+   const dy = eY - sY;
+   const len = Math.sqrt(dx*dx + dy*dy);
+   if (len < 0.001) return null;
+   const nx = -dy / len;
+   const ny = dx / len;
+   const hT = (w.thickness * scale) / 2;
+   return {
+      leftStart: { x: sX + nx * hT, y: sY + ny * hT },
+      leftEnd:   { x: eX + nx * hT, y: eY + ny * hT },
+      rightStart:{ x: sX - nx * hT, y: sY - ny * hT },
+      rightEnd:  { x: eX - nx * hT, y: eY - ny * hT },
+   };
+};
+
 export const WallLayer: React.FC<Props> = ({ walls, scale, zoom = 1 }) => {
   const { selectedObjectId, setSelectedObject, mode, setMode, snapToGrid, snapToPoints, orthoMode, gridMinorStep, snapTolerancePx, showAlignmentGuides, setActiveGuides, setActiveSnapPoint } = useUIStore();
   const addWall = useProjectStore(state => state.addWall);
@@ -24,6 +52,36 @@ export const WallLayer: React.FC<Props> = ({ walls, scale, zoom = 1 }) => {
   const theme = useTheme();
   const { t } = useI18nStore();
 
+  const hatchCanvas = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 16;
+    canvas.height = 16;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      // White background for CAD style
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 16, 16);
+      
+      // Use a slightly darker gray for the hatch lines
+      ctx.strokeStyle = '#aaaaaa';
+      ctx.lineWidth = 1;
+      
+      // Draw 45 degree diagonal lines for seamless tiling
+      ctx.beginPath();
+      ctx.moveTo(-4, 20); ctx.lineTo(20, -4);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(12, 20); ctx.lineTo(20, 12);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(-4, 4); ctx.lineTo(4, -4);
+      ctx.stroke();
+    }
+    return canvas;
+  }, []);
+
   const dragState = useRef<{
     connectedEndpoints: { wallId: string; type: 'start' | 'end'; originalWall: IWall }[];
     draggedVertexInitialPoint: { x: number; z: number } | null;
@@ -32,8 +90,117 @@ export const WallLayer: React.FC<Props> = ({ walls, scale, zoom = 1 }) => {
     draggedVertexInitialPoint: null
   });
 
+  const wallPolygons = useMemo(() => {
+    return walls.filter(w => w.visible).map(wall => {
+      const renderLine = getWallRenderLine(wall, walls);
+      const start = projectToCanvas(renderLine.start.x, renderLine.start.z);
+      const end = projectToCanvas(renderLine.end.x, renderLine.end.z);
+      
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const len = Math.sqrt(dx*dx + dy*dy);
+      if (len < 0.001) return { wall, points: [], isSelected: false };
+      const nx = -dy / len;
+      const ny = dx / len;
+      const hT = (wall.thickness * scale) / 2;
+      
+      let p1x = start.x * scale + nx * hT;
+      let p1y = start.y * scale + ny * hT;
+      let p4x = start.x * scale - nx * hT;
+      let p4y = start.y * scale - ny * hT;
+      
+      let p2x = end.x * scale + nx * hT;
+      let p2y = end.y * scale + ny * hT;
+      let p3x = end.x * scale - nx * hT;
+      let p3y = end.y * scale - ny * hT;
+
+      const eps = 0.005;
+
+      // Check start connections
+      const conStart = projectData.walls.filter(w => w.id !== wall.id && w.visible && (
+        (Math.abs(w.start.x - wall.start.x) < eps && Math.abs(w.start.z - wall.start.z) < eps) ||
+        (Math.abs(w.end.x - wall.start.x) < eps && Math.abs(w.end.z - wall.start.z) < eps) ||
+        isPointOnSegment(wall.start, w.start, w.end, eps)
+      ));
+      
+      if (conStart.length === 1) {
+        const other = conStart[0];
+        const oLines = getWallOffsetLines(other, walls, scale);
+        if (oLines) {
+          const isOtherOutgoing = Math.abs(other.start.x - wall.start.x) < eps && Math.abs(other.start.z - wall.start.z) < eps;
+          const L1 = {s: {x: p1x, y: p1y}, e: {x: p2x, y: p2y}};
+          const R1 = {s: {x: p4x, y: p4y}, e: {x: p3x, y: p3y}};
+          const oL = {s: oLines.leftStart, e: oLines.leftEnd};
+          const oR = {s: oLines.rightStart, e: oLines.rightEnd};
+          
+          const targetL = isOtherOutgoing ? oR : oL;
+          const targetR = isOtherOutgoing ? oL : oR;
+          
+          const iL = getLineIntersection(L1.s.x, L1.s.y, L1.e.x, L1.e.y, targetL.s.x, targetL.s.y, targetL.e.x, targetL.e.y);
+          const iR = getLineIntersection(R1.s.x, R1.s.y, R1.e.x, R1.e.y, targetR.s.x, targetR.s.y, targetR.e.x, targetR.e.y);
+          
+          if (iL) { p1x = iL.x; p1y = iL.y; }
+          if (iR) { p4x = iR.x; p4y = iR.y; }
+        }
+      }
+
+      // Check end connections
+      const conEnd = projectData.walls.filter(w => w.id !== wall.id && w.visible && (
+        (Math.abs(w.start.x - wall.end.x) < eps && Math.abs(w.start.z - wall.end.z) < eps) ||
+        (Math.abs(w.end.x - wall.end.x) < eps && Math.abs(w.end.z - wall.end.z) < eps) ||
+        isPointOnSegment(wall.end, w.start, w.end, eps)
+      ));
+
+      if (conEnd.length === 1) {
+        const other = conEnd[0];
+        const oLines = getWallOffsetLines(other, walls, scale);
+        if (oLines) {
+          const isOtherOutgoing = Math.abs(other.start.x - wall.end.x) < eps && Math.abs(other.start.z - wall.end.z) < eps;
+          const L1 = {s: {x: p1x, y: p1y}, e: {x: p2x, y: p2y}};
+          const R1 = {s: {x: p4x, y: p4y}, e: {x: p3x, y: p3y}};
+          const oL = {s: oLines.leftStart, e: oLines.leftEnd};
+          const oR = {s: oLines.rightStart, e: oLines.rightEnd};
+          
+          const targetL = isOtherOutgoing ? oL : oR;
+          const targetR = isOtherOutgoing ? oR : oL;
+          
+          const iL = getLineIntersection(L1.s.x, L1.s.y, L1.e.x, L1.e.y, targetL.s.x, targetL.s.y, targetL.e.x, targetL.e.y);
+          const iR = getLineIntersection(R1.s.x, R1.s.y, R1.e.x, R1.e.y, targetR.s.x, targetR.s.y, targetR.e.x, targetR.e.y);
+          
+          if (iL) { p2x = iL.x; p2y = iL.y; }
+          if (iR) { p3x = iR.x; p3y = iR.y; }
+        }
+      }
+
+      const isSelected = selectedObjectId === wall.id || useUIStore.getState().selectedItems.some(it => it.kind === 'wall' && it.wallId === wall.id);
+
+      return {
+        wall,
+        isSelected,
+        points: [p1x, p1y, p2x, p2y, p3x, p3y, p4x, p4y]
+      };
+    });
+  }, [walls, scale, projectData.walls, selectedObjectId]);
+
   return (
     <Group>
+      {/* Background Pass: All black walls to form union boundary */}
+      <Group listening={false}>
+         {wallPolygons.map(wp => {
+            if (wp.points.length === 0) return null;
+            return <Line key={`bg-${wp.wall.id}`} points={wp.points} closed fill={wp.isSelected && mode === 'select' ? theme.accent : '#000000'} stroke={wp.isSelected && mode === 'select' ? theme.accent : '#000000'} strokeWidth={3/zoom} lineJoin="miter" />;
+         })}
+      </Group>
+
+      {/* Foreground Pass: All hatched interiors */}
+      <Group listening={false}>
+         {wallPolygons.map(wp => {
+            if (wp.points.length === 0) return null;
+            return <Line key={`fg-${wp.wall.id}`} points={wp.points} closed fillPatternImage={hatchCanvas} fillPatternScale={{x: 1/zoom, y: 1/zoom}} strokeEnabled={false} lineJoin="miter" />;
+         })}
+      </Group>
+
+      {/* Interactive Pass: Invisible groups mapping exactly to the walls for hit detection and dragging */}
       {walls.map(wall => {
         if (!wall.visible) return null;
         
@@ -264,24 +431,23 @@ export const WallLayer: React.FC<Props> = ({ walls, scale, zoom = 1 }) => {
           >
             {/* Base wall */}
             <Line
-              points={[start.x * scale, start.y * scale, end.x * scale, end.y * scale]}
-              stroke={isSelected && mode === 'select' ? theme.accent : theme.wallStroke}
-              strokeWidth={wall.thickness * scale}
-              hitStrokeWidth={Math.max(wall.thickness * scale + 10, 15)}
-              lineCap="square"
+              points={wallPolygons.find(p => p.wall.id === wall.id)?.points || []}
+              closed={true}
+              opacity={0} // Invisible, only for hit detection
+              hitStrokeWidth={10}
               onClick={handleClick}
               onMouseDown={handleMouseDown}
               onTap={handleClick}
               onMouseEnter={(e) => {
                  if (mode === 'select') {
                     const container = e.target.getStage()?.container();
-                    if (container) container.style.cursor = 'move';
+                    if (container) container.style.cursor = 'crosshair';
                  }
               }}
               onMouseLeave={(e) => {
                  if (mode === 'select') {
                     const container = e.target.getStage()?.container();
-                    if (container) container.style.cursor = 'default';
+                    if (container) container.style.cursor = 'crosshair';
                  }
               }}
             />
@@ -435,12 +601,12 @@ export const WallLayer: React.FC<Props> = ({ walls, scale, zoom = 1 }) => {
                   }}
                   onMouseEnter={(e) => {
                     const container = e.target.getStage()?.container();
-                    if (container) container.style.cursor = 'move';
+                    if (container) container.style.cursor = 'crosshair';
                     e.target.scale({ x: 1.4, y: 1.4 });
                   }}
                   onMouseLeave={(e) => {
                     const container = e.target.getStage()?.container();
-                    if (container) container.style.cursor = 'default';
+                    if (container) container.style.cursor = 'crosshair';
                     e.target.scale({ x: 1, y: 1 });
                   }}
                 />
@@ -579,12 +745,12 @@ export const WallLayer: React.FC<Props> = ({ walls, scale, zoom = 1 }) => {
                   }}
                   onMouseEnter={(e) => {
                     const container = e.target.getStage()?.container();
-                    if (container) container.style.cursor = 'move';
+                    if (container) container.style.cursor = 'crosshair';
                     e.target.scale({ x: 1.4, y: 1.4 });
                   }}
                   onMouseLeave={(e) => {
                     const container = e.target.getStage()?.container();
-                    if (container) container.style.cursor = 'default';
+                    if (container) container.style.cursor = 'crosshair';
                     e.target.scale({ x: 1, y: 1 });
                   }}
                 />

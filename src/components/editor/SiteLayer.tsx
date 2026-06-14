@@ -80,25 +80,29 @@ export const SiteLayer: React.FC<Props> = ({ site, scale, zoom = 1 }) => {
       <Group x={centerX} y={centerY} listening={false}>
         {showAreaName && (
           <Text 
-            x={-site.width * scale / 2} 
-            y={showAreaArea ? -12 / zoom : -7 / zoom} 
-            width={site.width * scale}
+            x={-10000} 
+            y={showAreaArea ? -10000 - ((site.textSize || 1.2) * scale) / 2 : -10000} 
+            width={20000}
+            height={20000}
             text={t("canvas.siteLabel")} 
-            fontSize={16 / zoom} 
+            fontSize={(site.textSize || 1.2) * scale} 
             fontStyle="bold"
             align="center"
+            verticalAlign="middle"
             fill={theme.textSecondary}
             listening={false}
           />
         )}
         {showAreaArea && (
           <Text 
-            x={-site.width * scale / 2} 
-            y={showAreaName ? 8 / zoom : -6 / zoom} 
-            width={site.width * scale}
+            x={-10000} 
+            y={showAreaName ? -10000 + ((site.textSize || 1.2) * scale) / 2 : -10000} 
+            width={20000}
+            height={20000}
             text={formatArea(siteArea)} 
-            fontSize={13 / zoom} 
+            fontSize={(site.textSize || 1.2) * 0.8 * scale} 
             align="center"
+            verticalAlign="middle"
             fill={theme.textSecondary}
             listening={false}
           />

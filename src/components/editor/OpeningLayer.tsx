@@ -35,10 +35,11 @@ export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale, zoom = 1
         
         const isSelected = selectedObjectId === opening.id || useUIStore.getState().selectedItems.some(it => it.kind === 'opening' && it.openingId === opening.id);
         const isDoor = opening.type === 'door';
-        const color = isDoor ? '#f57c00' : '#00b0ff';
+        const color = '#ffffff'; // White background for opening
+        const strokeColor = '#000000'; // Black stroke for CAD style
         const shadowColor = isSelected ? '#fff59d' : 'transparent';
         const hoverBoxThickness = wall.thickness * scale + 20; // Fat hit box
-        const visualThickness = 6; // Thin and minimal 2D presentation
+        const visualThickness = wall.thickness * scale; // Match wall thickness precisely
 
         const handleClick = (e: any) => {
           if (mode === 'select') {
@@ -117,13 +118,13 @@ export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale, zoom = 1
             onMouseEnter={(e) => {
               if (mode === 'select') {
                 const container = e.target.getStage()?.container();
-                if (container) container.style.cursor = 'grab';
+                if (container) container.style.cursor = 'crosshair';
               }
             }}
             onMouseLeave={(e) => {
               if (mode === 'select') {
                 const container = e.target.getStage()?.container();
-                if (container) container.style.cursor = 'default';
+                if (container) container.style.cursor = 'crosshair';
               }
             }}
           >
@@ -143,8 +144,8 @@ export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale, zoom = 1
               width={opening.width * scale}
               height={visualThickness}
               fill={color}
-              stroke={isSelected ? '#ffff00' : '#555'}
-              strokeWidth={isSelected ? 2 : 1}
+              stroke={isSelected ? theme.accent : strokeColor}
+              strokeWidth={isSelected ? 2 / zoom : 1 / zoom}
               shadowColor={shadowColor}
               shadowBlur={isSelected ? 5 : 0}
             />
@@ -175,8 +176,8 @@ export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale, zoom = 1
             )}
 
             {/* End Markers */}
-            <Circle x={-(opening.width * scale) / 2} y={0} radius={isSelected ? 4 / zoom : 2 / zoom} fill="#fff" stroke={color} strokeWidth={1 / zoom} listening={false} />
-            <Circle x={(opening.width * scale) / 2} y={0} radius={isSelected ? 4 / zoom : 2 / zoom} fill="#fff" stroke={color} strokeWidth={1 / zoom} listening={false} />
+            <Line points={[-(opening.width * scale) / 2, -visualThickness/2, -(opening.width * scale) / 2, visualThickness/2]} stroke={isSelected ? theme.accent : strokeColor} strokeWidth={1 / zoom} listening={false} />
+            <Line points={[(opening.width * scale) / 2, -visualThickness/2, (opening.width * scale) / 2, visualThickness/2]} stroke={isSelected ? theme.accent : strokeColor} strokeWidth={1 / zoom} listening={false} />
 
             {/* Swing Arc for Door */}
             {isDoor && (
@@ -200,8 +201,8 @@ export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale, zoom = 1
                      <>
                        <Line
                          points={[startX, dirY * visualThickness / 2, endX, endY]}
-                         stroke={color}
-                         strokeWidth={1}
+                         stroke={strokeColor}
+                         strokeWidth={1 / zoom}
                        />
                        {/* Simple arc approximation */}
                        <Line
@@ -210,9 +211,8 @@ export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale, zoom = 1
                            startX + (hLeft ? 1 : -1) * leafLen * Math.cos(rad / 2), dirY * visualThickness / 2 + dirY * leafLen * Math.sin(rad / 2),
                            startX + (hLeft ? 1 : -1) * leafLen, dirY * visualThickness / 2
                          ]}
-                         stroke={color}
-                         strokeWidth={1}
-                         dash={[4, 4]}
+                         stroke={strokeColor}
+                         strokeWidth={1 / zoom}
                          tension={0.5}
                        />
                      </>

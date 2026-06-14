@@ -17,7 +17,7 @@ export const formatSize = (width: number, depth: number): string => {
 
 export const normalizeCoord = (value: number): number => {
   if (!Number.isFinite(value)) return 0;
-  return Math.round(value * 10000) / 10000;
+  return Math.round(value * 100) / 100;
 };
 
 // Derived values
@@ -63,6 +63,16 @@ export function getWallCenterline(wall: { start: {x: number, z: number}, end: {x
   };
 }
 
+export function isPointOnSegment(p: {x: number, z: number}, a: {x: number, z: number}, b: {x: number, z: number}, eps = 0.05) {
+  const len2 = (b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z);
+  if (len2 === 0) return false;
+  const cross = Math.abs((p.z - a.z) * (b.x - a.x) - (p.x - a.x) * (b.z - a.z));
+  if (cross / Math.sqrt(len2) > eps) return false;
+  const dot = (p.x - a.x) * (b.x - a.x) + (p.z - a.z) * (b.z - a.z);
+  if (dot < -eps || dot > len2 + eps) return false;
+  return true;
+}
+
 export function lineIntersection(p1: {x: number, z: number}, p2: {x: number, z: number}, p3: {x: number, z: number}, p4: {x: number, z: number}) {
   const denominator = (p1.x - p2.x) * (p3.z - p4.z) - (p1.z - p2.z) * (p3.x - p4.x);
   if (Math.abs(denominator) < 0.0001) return null; // parallel
@@ -88,16 +98,6 @@ export function getWallRenderLine(wall: IWall, allWalls: IWall[]): { start: {x: 
     const other = getWallCenterline(startConnected[0]);
     const pInt = lineIntersection(baseStart, baseEnd, other.start, other.end);
     if (pInt) renderStart = pInt;
-  } else if (startConnected.length === 0) {
-    // Unconnected start: shrink by t/2 to compensate for square lineCap
-    const dx = baseEnd.x - baseStart.x;
-    const dz = baseEnd.z - baseStart.z;
-    const len = Math.sqrt(dx*dx + dz*dz);
-    const t = (wall.thickness || 0.2) / 2;
-    if (len > t) {
-      renderStart.x += (dx / len) * t;
-      renderStart.z += (dz / len) * t;
-    }
   }
 
   // Find walls connected to end
@@ -106,16 +106,6 @@ export function getWallRenderLine(wall: IWall, allWalls: IWall[]): { start: {x: 
     const other = getWallCenterline(endConnected[0]);
     const pInt = lineIntersection(baseStart, baseEnd, other.start, other.end);
     if (pInt) renderEnd = pInt;
-  } else if (endConnected.length === 0) {
-    // Unconnected end: shrink by t/2 to compensate for square lineCap
-    const dx = baseStart.x - baseEnd.x;
-    const dz = baseStart.z - baseEnd.z;
-    const len = Math.sqrt(dx*dx + dz*dz);
-    const t = (wall.thickness || 0.2) / 2;
-    if (len > t) {
-      renderEnd.x += (dx / len) * t;
-      renderEnd.z += (dz / len) * t;
-    }
   }
 
   return { start: renderStart, end: renderEnd };
@@ -461,8 +451,7 @@ export interface MeasureCandidate {
 export const getMeasureSnapCandidates = (
   pointerX: number, 
   pointerZ: number, 
-  project: import('../../types').IProject, 
-  measureMode: string
+  project: import('../../types').IProject
 ): MeasureCandidate[] => {
   const candidates: MeasureCandidate[] = [];
 
@@ -497,26 +486,19 @@ export const getMeasureSnapCandidates = (
 
     // Distance to pointer
     const distCenter = Math.sqrt((pointerX - px)**2 + (pointerZ - pz)**2);
+    candidates.push({ point: { x: px, z: pz }, label: 'Tim tường', distance: distCenter });
 
-    if (measureMode === 'centerline' || measureMode === 'thickness') {
-      candidates.push({ point: { x: px, z: pz }, label: 'Tim tường', distance: distCenter });
-    }
+    // Face A
+    const hxA = px + nx * (wall.thickness / 2);
+    const hzA = pz + nz * (wall.thickness / 2);
+    const distA = Math.sqrt((pointerX - hxA)**2 + (pointerZ - hzA)**2);
+    candidates.push({ point: { x: hxA, z: hzA }, label: 'Mép tường', distance: distA });
 
-    if (measureMode === 'innerFace' || measureMode === 'thickness') {
-      // Face A (assume inner is normal direction)
-      const hx = px + nx * (wall.thickness / 2);
-      const hz = pz + nz * (wall.thickness / 2);
-      const distA = Math.sqrt((pointerX - hx)**2 + (pointerZ - hz)**2);
-      candidates.push({ point: { x: hx, z: hz }, label: 'Mép tường A', distance: distA });
-    }
-
-    if (measureMode === 'outerFace' || measureMode === 'thickness') {
-      // Face B
-      const hx = px - nx * (wall.thickness / 2);
-      const hz = pz - nz * (wall.thickness / 2);
-      const distB = Math.sqrt((pointerX - hx)**2 + (pointerZ - hz)**2);
-      candidates.push({ point: { x: hx, z: hz }, label: 'Mép tường B', distance: distB });
-    }
+    // Face B
+    const hxB = px - nx * (wall.thickness / 2);
+    const hzB = pz - nz * (wall.thickness / 2);
+    const distB = Math.sqrt((pointerX - hxB)**2 + (pointerZ - hzB)**2);
+    candidates.push({ point: { x: hxB, z: hzB }, label: 'Mép tường', distance: distB });
     
     // Also endpoints of wall
     candidates.push({ point: wall.start, label: 'Góc tường', distance: Math.sqrt((pointerX - wall.start.x)**2 + (pointerZ - wall.start.z)**2) });
@@ -615,27 +597,5 @@ export function clipPolygon(subjectPolygon: {x: number, z: number}[], clipPolygo
 }
 
 export function getAreaNetSize(area: IArea, walls: IWall[]): number {
-  const grossArea = getPolygonArea(area.points);
-  let totalWallOverlap = 0;
-
-  walls.forEach(wall => {
-    if (!wall.visible) return;
-    
-    const poly = getWallPolygon(wall, walls);
-    if (!poly) return;
-    
-    // The 4 corners of the wall polygon (counter-clockwise order)
-    const wallPolygon = [poly.pLeftStart, poly.pRightStart, poly.pRightEnd, poly.pLeftEnd];
-    
-    try {
-      const clipped = clipPolygon(area.points, wallPolygon);
-      if (clipped.length >= 3) {
-        totalWallOverlap += getPolygonArea(clipped);
-      }
-    } catch (e) {
-      console.warn("Failed to clip wall", e);
-    }
-  });
-
-  return Math.max(0, grossArea - totalWallOverlap);
+  return getPolygonArea(area.points);
 }

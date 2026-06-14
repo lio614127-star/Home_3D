@@ -18,7 +18,6 @@ interface UIState {
   };
   validationIssues: IValidationIssue[];
   snapToGrid: boolean;
-  creationSnapToGrid: boolean;
   snapToPoints: boolean;
   orthoMode: boolean;
   showAlignmentGuides: boolean;
@@ -51,7 +50,7 @@ interface UIState {
   setValidationIssues: (issues: IValidationIssue[]) => void;
   setActiveGuides: (guides: { type: 'horizontal' | 'vertical', pos: number }[]) => void;
   setActiveSnapPoint: (point: { x: number; y: number; type: string; label?: string; priority?: number; wallThickness?: number; wallJustification?: 'center' | 'left' | 'right' } | null) => void;
-  setDraftingToggle: (key: 'showGrid2D' | 'snapToGrid' | 'creationSnapToGrid' | 'snapToPoints' | 'orthoMode' | 'showAlignmentGuides', val: boolean) => void;
+  setDraftingToggle: (key: 'showGrid2D' | 'snapToGrid' | 'snapToPoints' | 'orthoMode' | 'showAlignmentGuides', val: boolean) => void;
   setViewMode: (mode: '2d' | '3d' | 'split') => void;
   setCameraMode: (mode: 'perspective' | 'top') => void;
   setShowAreaName: (showAreaName: boolean) => void;
@@ -84,7 +83,6 @@ export const useUIStore = create<UIState>((set) => ({
   },
   validationIssues: [],
   snapToGrid: false,
-  creationSnapToGrid: true,
   snapToPoints: true,
   orthoMode: false,
   showAreaName: true,

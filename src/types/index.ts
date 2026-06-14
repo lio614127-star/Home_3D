@@ -21,6 +21,7 @@ export interface ISite extends IBaseObject {
   depth: number;
   frontDirection: string;
   origin: Vector3;
+  textSize?: number;
 }
 
 export interface IBuilding extends IBaseObject {
@@ -31,6 +32,7 @@ export interface IBuilding extends IBaseObject {
   floorHeight: number;
   wallHeight: number;
   wallThickness: number;
+  textSize?: number;
 }
 
 export interface ILevel {
@@ -55,6 +57,8 @@ export interface IArea extends IBaseObject {
   points: { x: number; z: number }[];
   levelId: string;
   elevation?: number;
+  textSize?: number;
+  color?: string;
 }
 
 export interface IOpening extends IBaseObject {

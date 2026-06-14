@@ -7,7 +7,7 @@ import { BuildingLayer } from './BuildingLayer';
 import { WallLayer } from './WallLayer';
 import { AreaLayer } from './AreaLayer';
 import { OpeningLayer } from './OpeningLayer';
-import { DimensionLayer } from './DimensionLayer';
+import { DimensionLayer, DimensionCAD } from './DimensionLayer';
 import { GridLayer } from './GridLayer';
 import { GuideLayer } from './GuideLayer';
 import { canvasToProject, projectToCanvas, rectContainsPoint, rectIntersectsSegment, rectIntersectsPolygon, getWallLength, getWallCenterline, getWallRenderLine, RectProject, getMeasureSnapCandidates, MeasureCandidate, formatMeters, formatArea, formatSize, normalizeCoord } from '../../core/geometry/math';
@@ -36,7 +36,8 @@ export const Canvas2D: React.FC = () => {
 
   // Separate state for each drawing tool
   const [wallChainAnchor, setWallChainAnchor] = useState<{x: number, z: number} | null>(null);
-  const [measureChainAnchor, setMeasureChainAnchor] = useState<{x: number, z: number} | null>(null);
+  const [measureDraftStart, setMeasureDraftStart] = useState<{x: number, z: number} | null>(null);
+  const [measureDraftEnd, setMeasureDraftEnd] = useState<{x: number, z: number} | null>(null);
   const [areaDraftStart, setAreaDraftStart] = useState<{x: number, z: number} | null>(null);
   const [siteDraftStart, setSiteDraftStart] = useState<{x: number, z: number} | null>(null);
   const [mousePos, setMousePos] = useState<{x: number, z: number} | null>(null);
@@ -64,7 +65,7 @@ export const Canvas2D: React.FC = () => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Space') setIsSpaceDown(e.type === 'keydown');
       if (e.type === 'keydown' && (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey))) {
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) return;
+        if ((e.target instanceof HTMLInputElement && (e.target.type === 'text' || e.target.type === 'number')) || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) return;
         e.preventDefault();
         if (e.shiftKey) {
           useProjectStore.getState().redo();
@@ -74,13 +75,13 @@ export const Canvas2D: React.FC = () => {
       }
       
       if (e.type === 'keydown' && (e.code === 'KeyY' && (e.ctrlKey || e.metaKey))) {
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) return;
+        if ((e.target instanceof HTMLInputElement && (e.target.type === 'text' || e.target.type === 'number')) || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) return;
         e.preventDefault();
         useProjectStore.getState().redo();
       }
 
       if (e.type === 'keydown' && (e.code === 'Delete' || e.code === 'Backspace')) {
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) return;
+        if ((e.target instanceof HTMLInputElement && (e.target.type === 'text' || e.target.type === 'number')) || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) return;
         
         const { selectedObjectId, selectedObjectType, setSelectedObject, selectedItems, setSelectedItems } = useUIStore.getState();
         
@@ -114,43 +115,21 @@ export const Canvas2D: React.FC = () => {
         }
       }
       
-      if (e.type === 'keydown' && e.code === 'Escape') {
-        const { mode, setMode } = useUIStore.getState();
-        if (mode === 'addWall') {
-          if (wallChainAnchor) {
-            setWallChainAnchor(null);
-          } else {
-            setMode('select');
-          }
-        } else if (mode === 'measure') {
-          if (measureChainAnchor) {
-            setMeasureChainAnchor(null);
-          } else {
-            setMode('select');
-          }
-        } else if (mode === 'addSite') {
-          setSiteDraftStart(null);
-          setMode('select');
-          useUIStore.getState().setActiveGuides([]);
-        } else if (mode === 'addArea') {
-          setAreaDraftStart(null);
-          setMode('select');
-          useUIStore.getState().setActiveGuides([]);
-        } else if (mode !== 'select') {
-          setMode('select');
-          setWallChainAnchor(null);
-          setMeasureChainAnchor(null);
-          setAreaDraftStart(null);
-          setSiteDraftStart(null);
-          setMousePos(null);
-          useUIStore.getState().setActiveGuides([]);
-        } else {
-          useUIStore.getState().setSelectedObject(null, null);
-        }
+      if (e.type === 'keydown' && (e.key === 'Escape' || e.key === 'Esc')) {
+        const { setMode, setSelectedObject, setSelectedItems, setActiveGuides } = useUIStore.getState();
+        setMode('select');
+        setWallChainAnchor(null);
+        setMeasureChainAnchor(null);
+        setAreaDraftStart(null);
+        setSiteDraftStart(null);
+        setMousePos(null);
+        setSelectedObject(null, null);
+        setSelectedItems([]);
+        setActiveGuides([]);
       }
       
       if (e.type === 'keydown' && e.code === 'Tab') {
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) return;
+        if ((e.target instanceof HTMLInputElement && (e.target.type === 'text' || e.target.type === 'number')) || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) return;
         e.preventDefault();
         const { mode, setMode } = useUIStore.getState();
         if (mode !== 'measure') {
@@ -217,8 +196,6 @@ export const Canvas2D: React.FC = () => {
     }
 
     // Synchronously resolve draft snap point
-    const isCreationMode = currentMode !== 'select';
-    const effectiveSnapToGrid = isCreationMode ? useUIStore.getState().creationSnapToGrid : snapToGrid;
     const dynamicGridMinorStep = zoom >= 1.5 ? 0.25 : 0.5;
 
     const bypassSnap = e.evt?.altKey;
@@ -226,17 +203,13 @@ export const Canvas2D: React.FC = () => {
       return { x: rawProjX, z: rawProjZ };
     }
 
-    const measureMode = currentMode === 'measure' ? useUIStore.getState().toolDefaults.measure.wallMeasureMode : undefined;
-
     const snapState = resolveBestSnap(rawProjX, rawProjZ, project, {
-      snapToGrid: effectiveSnapToGrid,
+      snapToGrid: snapToGrid,
       snapToPoints,
-      orthoMode,
+      orthoMode: orthoMode || e.evt?.shiftKey,
       gridMinorStep: dynamicGridMinorStep,
       scale: PX_PER_METER * zoom,
-      startPoint: currentMode === 'addWall' ? (wallChainAnchor || undefined) : (currentMode === 'measure' ? (measureChainAnchor || undefined) : undefined),
-      isCreationMode,
-      measureMode
+      startPoint: currentMode === 'addWall' ? (wallChainAnchor || undefined) : (currentMode === 'measure' ? (measureDraftStart && !measureDraftEnd ? measureDraftStart : undefined) : undefined)
     });
 
     return { x: snapState.x, z: snapState.z };
@@ -297,8 +270,6 @@ export const Canvas2D: React.FC = () => {
     const rawProjZ = localPos.y / PX_PER_METER;
 
     const currentMode = useUIStore.getState().mode;
-    const isCreationMode = currentMode !== 'select';
-    const effectiveSnapToGrid = isCreationMode ? useUIStore.getState().creationSnapToGrid : snapToGrid;
     
     // Adaptive grid step: zoom >= 1.5 -> 0.25m, else 0.5m
     const dynamicGridMinorStep = zoom >= 1.5 ? 0.25 : 0.5;
@@ -316,7 +287,7 @@ export const Canvas2D: React.FC = () => {
                
       if (!bypassSnap) {
           const snapState = resolveBestSnap(rawProjX, rawProjZ, project, {
-            snapToGrid: effectiveSnapToGrid, snapToPoints, orthoMode: false, gridMinorStep: dynamicGridMinorStep, scale: PX_PER_METER * zoom, showAlignmentGuides: useUIStore.getState().showAlignmentGuides
+            snapToGrid, snapToPoints, orthoMode: false, gridMinorStep: dynamicGridMinorStep, scale: PX_PER_METER * zoom, showAlignmentGuides: useUIStore.getState().showAlignmentGuides
           });
           finalDeltaX = snapState.x - globalDrag.startX;
           finalDeltaZ = snapState.z - globalDrag.startZ;
@@ -331,19 +302,17 @@ export const Canvas2D: React.FC = () => {
     }
 
     const bypassSnap = e.evt.altKey;
-    const measureMode = currentMode === 'measure' ? useUIStore.getState().toolDefaults.measure.wallMeasureMode : undefined;
     let snapState = { x: rawProjX, z: rawProjZ, snapped: false, type: undefined as any, label: undefined as any, priority: undefined as any, guides: [] as any[] };
     
     if (!bypassSnap) {
       snapState = resolveBestSnap(rawProjX, rawProjZ, project, {
-        snapToGrid: effectiveSnapToGrid,
+        snapToGrid,
         snapToPoints,
-        orthoMode,
+        orthoMode: orthoMode || e.evt?.shiftKey,
         gridMinorStep: dynamicGridMinorStep,
         scale: PX_PER_METER * zoom,
-        startPoint: currentMode === 'addWall' ? (wallChainAnchor || undefined) : (currentMode === 'measure' ? (measureChainAnchor || undefined) : undefined),
-        showAlignmentGuides: useUIStore.getState().showAlignmentGuides,
-        measureMode
+        startPoint: currentMode === 'addWall' ? (wallChainAnchor || undefined) : (currentMode === 'measure' ? (measureDraftStart && !measureDraftEnd ? measureDraftStart : undefined) : undefined),
+        showAlignmentGuides: useUIStore.getState().showAlignmentGuides
       });
     }
 
@@ -573,7 +542,6 @@ export const Canvas2D: React.FC = () => {
             visible: true,
             locked: false
           });
-          setMode('select');
           setSelectedObject(newId, 'area');
         }
         // Always clear draft regardless of whether area was created
@@ -612,8 +580,8 @@ export const Canvas2D: React.FC = () => {
       return;
     }
 
-    // === ADD WALL / MEASURE: chain drawing ===
-    const currentAnchor = mode === 'addWall' ? wallChainAnchor : (mode === 'measure' ? measureChainAnchor : null);
+    // === ADD WALL: chain drawing ===
+    const currentAnchor = mode === 'addWall' ? wallChainAnchor : null;
 
     if (!currentAnchor) {
       if (mode === 'addWall') {
@@ -628,7 +596,6 @@ export const Canvas2D: React.FC = () => {
         }
         setWallChainAnchor({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
       }
-      if (mode === 'measure') setMeasureChainAnchor({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
       setMousePos({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
     } else {
       useUIStore.getState().setActiveGuides([]);
@@ -657,12 +624,53 @@ export const Canvas2D: React.FC = () => {
           });
           setWallChainAnchor(p2); // Continue chain
         }
-      } else if (mode === 'measure') {
-        const p1 = currentAnchor;
-        const dx = p2.x - p1.x;
-        const dz = p2.z - p1.z;
-        const length = normalizeCoord(Math.sqrt(dx*dx + dz*dz));
-        if (length > 0.1) {
+      }
+    }
+
+    // === ADD MEASURE: 3-click smart dimension ===
+    if (mode === 'measure') {
+      if (!measureDraftStart) {
+        setMeasureDraftStart({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
+        setMousePos({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
+      } else if (!measureDraftEnd) {
+        setMeasureDraftEnd({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
+        setMousePos({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
+        useUIStore.getState().setActiveGuides([]);
+      } else {
+        const p1 = measureDraftStart;
+        const p2 = measureDraftEnd;
+        const m = { x: normalizeCoord(projX), z: normalizeCoord(projZ) };
+        
+        let start, end;
+        const dx = Math.abs(p2.x - p1.x);
+        const dz = Math.abs(p2.z - p1.z);
+
+        let isHorizontalDim = Math.abs(m.z - p1.z) > Math.abs(m.x - p1.x);
+        if (dx < 0.01) isHorizontalDim = false;
+        if (dz < 0.01) isHorizontalDim = true;
+
+        if (isHorizontalDim) {
+           start = { x: p1.x, z: p1.z };
+           end = { x: p2.x, z: p1.z };
+        } else {
+           start = { x: p1.x, z: p1.z };
+           end = { x: p1.x, z: p2.z };
+        }
+
+        const dxLine = end.x - start.x;
+        const dyLine = end.z - start.z;
+        const lenLine = Math.sqrt(dxLine*dxLine + dyLine*dyLine);
+        
+        if (lenLine > 0.01) {
+          const uxx = dxLine / lenLine;
+          const uyy = dyLine / lenLine;
+          const nxx = -uyy;
+          const nyy = uxx;
+
+          const vx = m.x - start.x;
+          const vy = m.z - start.z;
+          const offsetDist = vx * nxx + vy * nyy;
+
           const newId = `dim_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
           useProjectStore.getState().commitHistory();
           addAnnotation({
@@ -671,12 +679,14 @@ export const Canvas2D: React.FC = () => {
             layer: 'annotations',
             visible: true,
             locked: false,
-            start: p1,
-            end: p2,
-            offsetDistance: 1
+            start,
+            end,
+            offsetDistance: offsetDist
           });
-          setMeasureChainAnchor(p2); // Continue chain
         }
+        setMeasureDraftStart(null);
+        setMeasureDraftEnd(null);
+        useUIStore.getState().setActiveGuides([]);
       }
     }
   };
@@ -705,6 +715,7 @@ export const Canvas2D: React.FC = () => {
 
     if (!mousePos) return <Group listening={false}>{elements}</Group>;
 
+    // Crosshair rendering is now handled by standard CSS cursor: crosshair
 
     // Wall preview
     if (mode === 'addWall' && wallChainAnchor) {
@@ -750,8 +761,10 @@ export const Canvas2D: React.FC = () => {
     if (mode === 'addArea' && areaDraftStart) {
       const minX = Math.min(areaDraftStart.x, mousePos.x);
       const minZ = Math.min(areaDraftStart.z, mousePos.z);
-      const width = Math.abs(mousePos.x - areaDraftStart.x);
-      const depth = Math.abs(mousePos.z - areaDraftStart.z);
+      const rawWidth = Math.abs(mousePos.x - areaDraftStart.x);
+      const rawDepth = Math.abs(mousePos.z - areaDraftStart.z);
+      const width = Number(rawWidth.toFixed(2));
+      const depth = Number(rawDepth.toFixed(2));
       const pos = projectToCanvas(minX, minZ);
 
       elements.push(
@@ -780,12 +793,93 @@ export const Canvas2D: React.FC = () => {
       );
     }
 
+    // Opening (Door/Window) preview
+    if (mode === 'addDoor' || mode === 'addWindow') {
+      const { width } = useUIStore.getState().toolDefaults.opening;
+      let hoveredWall: any = null;
+      let minDistance = Infinity;
+      let projP = mousePos;
+
+      for (const w of project.walls) {
+         const dx = w.end.x - w.start.x;
+         const dz = w.end.z - w.start.z;
+         const len = Math.sqrt(dx*dx + dz*dz);
+         if (len < 0.001) continue;
+         const u = ((mousePos.x - w.start.x)*dx + (mousePos.z - w.start.z)*dz) / (len*len);
+         if (u >= 0 && u <= 1) {
+            const px = w.start.x + u*dx;
+            const pz = w.start.z + u*dz;
+            const dist = Math.sqrt((mousePos.x - px)**2 + (mousePos.z - pz)**2);
+            if (dist < 0.5 && dist < minDistance) { // within half meter
+               minDistance = dist;
+               hoveredWall = w;
+               projP = { x: px, z: pz };
+            }
+         }
+      }
+
+      if (hoveredWall) {
+         const dx = hoveredWall.end.x - hoveredWall.start.x;
+         const dz = hoveredWall.end.z - hoveredWall.start.z;
+         const wallYaw = Math.atan2(dz, dx) * (180 / Math.PI);
+         const thickness = hoveredWall.thickness;
+
+         const distToStart = Math.sqrt((projP.x - hoveredWall.start.x)**2 + (projP.z - hoveredWall.start.z)**2);
+         const distToEnd = Math.sqrt((projP.x - hoveredWall.end.x)**2 + (projP.z - hoveredWall.end.z)**2);
+
+         const leftDist = Math.max(0, distToStart - width / 2);
+         const rightDist = Math.max(0, distToEnd - width / 2);
+         
+         const color = mode === 'addDoor' ? '#f57c00' : '#00b0ff';
+
+         elements.push(
+            <Group key="preview-opening" x={projP.x * PX_PER_METER} y={projP.z * PX_PER_METER} rotation={wallYaw} listening={false}>
+              <Rect 
+                 x={- (width * PX_PER_METER) / 2} 
+                 y={- (thickness * PX_PER_METER) / 2}
+                 width={width * PX_PER_METER}
+                 height={thickness * PX_PER_METER}
+                 fill={color}
+                 opacity={0.8}
+                 stroke="#fff"
+                 strokeWidth={2 / zoom}
+              />
+              <Text 
+                 x={-20 / zoom}
+                 y={- (thickness * PX_PER_METER) / 2 - 15 / zoom}
+                 text={`${width.toFixed(2)}m`}
+                 fontSize={12 / zoom}
+                 fill="#fff"
+                 align="center"
+                 width={40 / zoom}
+              />
+              
+              {/* Left dimension line */}
+              <Group>
+                <Line points={[- (width * PX_PER_METER) / 2, 0, - (width * PX_PER_METER) / 2 - leftDist * PX_PER_METER, 0]} stroke="#00bcd4" strokeWidth={1.5 / zoom} dash={[5 / zoom, 5 / zoom]} />
+                <Line points={[- (width * PX_PER_METER) / 2 - leftDist * PX_PER_METER, -10 / zoom, - (width * PX_PER_METER) / 2 - leftDist * PX_PER_METER, 10 / zoom]} stroke="#00bcd4" strokeWidth={2 / zoom} />
+                <Text x={- (width * PX_PER_METER) / 2 - (leftDist * PX_PER_METER) / 2 - 20 / zoom} y={-15 / zoom} text={leftDist.toFixed(2)} fontSize={12 / zoom} fill="#00bcd4" align="center" width={40 / zoom} />
+              </Group>
+              
+              {/* Right dimension line */}
+              <Group>
+                <Line points={[(width * PX_PER_METER) / 2, 0, (width * PX_PER_METER) / 2 + rightDist * PX_PER_METER, 0]} stroke="#00bcd4" strokeWidth={1.5 / zoom} dash={[5 / zoom, 5 / zoom]} />
+                <Line points={[(width * PX_PER_METER) / 2 + rightDist * PX_PER_METER, -10 / zoom, (width * PX_PER_METER) / 2 + rightDist * PX_PER_METER, 10 / zoom]} stroke="#00bcd4" strokeWidth={2 / zoom} />
+                <Text x={(width * PX_PER_METER) / 2 + (rightDist * PX_PER_METER) / 2 - 20 / zoom} y={-15 / zoom} text={rightDist.toFixed(2)} fontSize={12 / zoom} fill="#00bcd4" align="center" width={40 / zoom} />
+              </Group>
+            </Group>
+         );
+      }
+    }
+
     // Site preview
     if (mode === 'addSite' && siteDraftStart) {
       const minX = Math.min(siteDraftStart.x, mousePos.x);
       const minZ = Math.min(siteDraftStart.z, mousePos.z);
-      const width = Math.abs(mousePos.x - siteDraftStart.x);
-      const depth = Math.abs(mousePos.z - siteDraftStart.z);
+      const rawWidth = Math.abs(mousePos.x - siteDraftStart.x);
+      const rawDepth = Math.abs(mousePos.z - siteDraftStart.z);
+      const width = Number(rawWidth.toFixed(2));
+      const depth = Number(rawDepth.toFixed(2));
       const pos = projectToCanvas(minX, minZ);
 
       elements.push(
@@ -846,30 +940,84 @@ export const Canvas2D: React.FC = () => {
     }
 
     // Measure preview
-    if (mode === 'measure' && measureChainAnchor) {
-      const p1 = projectToCanvas(measureChainAnchor.x, measureChainAnchor.z);
-      const p2 = projectToCanvas(mousePos.x, mousePos.z);
-      const dx = mousePos.x - measureChainAnchor.x;
-      const dz = mousePos.z - measureChainAnchor.z;
-      const len = Math.sqrt(dx*dx + dz*dz);
-      elements.push(
-        <Group key="preview-dim" listening={false}>
-          <Line
-            points={[p1.x * PX_PER_METER, p1.y * PX_PER_METER, p2.x * PX_PER_METER, p2.y * PX_PER_METER]}
-            stroke="#1976d2"
-            strokeWidth={2 / zoom}
-            dash={[5 / zoom, 5 / zoom]}
-          />
-          <Text
-            x={(p1.x + p2.x) / 2 * PX_PER_METER}
-            y={(p1.y + p2.y) / 2 * PX_PER_METER - 15 / zoom}
-            text={`${len.toFixed(2)} m`}
-            fill="#1976d2"
-            fontSize={12 / zoom}
-            align="center"
-          />
-        </Group>
-      );
+    if (mode === 'measure') {
+      if (measureDraftStart && !measureDraftEnd) {
+        const p1 = projectToCanvas(measureDraftStart.x, measureDraftStart.z);
+        const p2 = projectToCanvas(mousePos.x, mousePos.z);
+        
+        elements.push(
+          <Group key="measure-draft" listening={false}>
+            <Circle
+              x={p1.x * PX_PER_METER}
+              y={p1.y * PX_PER_METER}
+              radius={5 / zoom}
+              fill={theme.dimensionStroke}
+              stroke="#fff"
+              strokeWidth={1.5 / zoom}
+            />
+            <Line
+              points={[p1.x * PX_PER_METER, p1.y * PX_PER_METER, p2.x * PX_PER_METER, p2.y * PX_PER_METER]}
+              stroke={theme.dimensionStroke}
+              strokeWidth={1.5 / zoom}
+              dash={[5 / zoom, 5 / zoom]}
+            />
+          </Group>
+        );
+      } else if (measureDraftStart && measureDraftEnd) {
+        const p1 = measureDraftStart;
+        const p2 = measureDraftEnd;
+        const m = mousePos;
+        
+        let start, end;
+        const dx = Math.abs(p2.x - p1.x);
+        const dz = Math.abs(p2.z - p1.z);
+
+        let isHorizontalDim = Math.abs(m.z - p1.z) > Math.abs(m.x - p1.x);
+        if (dx < 0.01) isHorizontalDim = false;
+        if (dz < 0.01) isHorizontalDim = true;
+
+        if (isHorizontalDim) {
+           start = { x: p1.x, z: p1.z };
+           end = { x: p2.x, z: p1.z };
+        } else {
+           start = { x: p1.x, z: p1.z };
+           end = { x: p1.x, z: p2.z };
+        }
+
+        const dxLine = end.x - start.x;
+        const dyLine = end.z - start.z;
+        const lenLine = Math.sqrt(dxLine*dxLine + dyLine*dyLine);
+        
+        if (lenLine >= 0.01) {
+          const uxx = dxLine / lenLine;
+          const uyy = dyLine / lenLine;
+          const nxx = -uyy;
+          const nyy = uxx;
+
+          const vx = m.x - start.x;
+          const vy = m.z - start.z;
+          const offsetDist = vx * nxx + vy * nyy;
+          
+          elements.push(
+            <Group key="measure-preview" listening={false}>
+              <Circle x={start.x * PX_PER_METER} y={start.z * PX_PER_METER} radius={4 / zoom} fill={theme.dimensionStroke} stroke="#fff" strokeWidth={1 / zoom} />
+              <Circle x={end.x * PX_PER_METER} y={end.z * PX_PER_METER} radius={4 / zoom} fill={theme.dimensionStroke} stroke="#fff" strokeWidth={1 / zoom} />
+              <DimensionCAD
+                id="preview-dim"
+                start={{ x: start.x, y: start.z }}
+                end={{ x: end.x, y: end.z }}
+                offsetDist={offsetDist}
+                text={formatMeters(lenLine)}
+                scale={PX_PER_METER}
+                zoom={zoom}
+                color={theme.dimensionStroke}
+                isManual={false}
+                isSelected={false}
+              />
+            </Group>
+          );
+        }
+      }
     }
 
     // Measure Candidate hint
@@ -926,7 +1074,7 @@ export const Canvas2D: React.FC = () => {
   const visibleEndY = ((dimensions.height - stagePos.y) / zoom) / PX_PER_METER;
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%', background: theme.canvasBg, cursor: isSpaceDown ? 'grab' : (mode === 'select' ? 'default' : 'crosshair') }}>
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%', background: theme.canvasBg, cursor: isSpaceDown ? 'grab' : 'crosshair' }}>
       {dimensions.width > 0 && dimensions.height > 0 && (
         <Stage 
           width={dimensions.width} 
@@ -944,7 +1092,10 @@ export const Canvas2D: React.FC = () => {
         onContextMenu={(e) => {
           e.evt.preventDefault();
           if (mode === 'addWall') setWallChainAnchor(null);
-          if (mode === 'measure') setMeasureChainAnchor(null);
+          if (mode === 'measure') {
+            setMeasureDraftStart(null);
+            setMeasureDraftEnd(null);
+          }
           if (mode === 'addArea') setAreaDraftStart(null);
           useUIStore.getState().setMarquee(null, null);
         }}
@@ -958,7 +1109,7 @@ export const Canvas2D: React.FC = () => {
         y={stagePos.y}
       >
         <Layer>
-          <Group scaleX={zoom} scaleY={zoom}>
+          <Group scaleX={zoom} scaleY={zoom} listening={!isSpaceDown}>
             {showGrid2D && (
               <GridLayer 
                 startX={visibleStartX} 
@@ -998,9 +1149,9 @@ export const Canvas2D: React.FC = () => {
           {areaDraftStart ? (t("hint.areaClickSecond") || "Nhấn điểm thứ hai để tạo khu vực. Esc để hủy.") : (t("hint.areaClickFirst") || "Nhấn điểm đầu tiên của khu vực.")}
         </div>
       )}
-      {(mode === 'measure') && measureChainAnchor && (
+      {(mode === 'measure') && (measureDraftStart || measureDraftEnd) && (
         <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '8px 16px', borderRadius: '4px', fontSize: '14px', pointerEvents: 'none', zIndex: 10 }}>
-          {t("hint.measureChainActive")}
+          {measureDraftStart && measureDraftEnd ? "Di chuyển chuột để chọn vị trí hiển thị kết quả đo. Nhấn Esc để hủy." : (measureDraftStart ? "Nhấn điểm thứ hai để kết thúc đo. Esc để hủy." : "Nhấn điểm bắt đầu để đo. Esc để hủy.")}
         </div>
       )}
       {(mode === 'addDoor' || mode === 'addWindow') && (

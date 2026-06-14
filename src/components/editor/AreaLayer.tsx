@@ -96,6 +96,13 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale, zoom = 1 }) => {
         const areaValue = getAreaNetSize(area, projectData.walls);
         const centroid = getPolygonCentroid(area.points);
         const centroidCanvas = projectToCanvas(centroid.x, centroid.z);
+        
+        const xs = area.points.map(p => p.x);
+        const zs = area.points.map(p => p.z);
+        const areaWidth = Math.max(...xs) - Math.min(...xs);
+        const areaDepth = Math.max(...zs) - Math.min(...zs);
+        const dynamicTextSize = Math.max(0.2, Math.min(areaWidth, areaDepth) * 0.15);
+        const actualTextSize = area.textSize || dynamicTextSize;
 
         return (
           <Group 
@@ -123,19 +130,19 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale, zoom = 1 }) => {
             <Line
               points={flatPoints}
               closed={true}
-              fill={isSelected ? theme.selectionFill : theme.roomFill}
+              fill={isSelected ? theme.selectionFill : (area.color ? `${area.color}66` : theme.roomFill)}
               strokeEnabled={false}
               hitStrokeWidth={10}
               onMouseEnter={(e) => {
                 if (isSelectMode) {
                   const container = e.target.getStage()?.container();
-                  if (container) container.style.cursor = 'pointer';
+                  if (container) container.style.cursor = 'crosshair';
                 }
               }}
               onMouseLeave={(e) => {
                 if (isSelectMode) {
                   const container = e.target.getStage()?.container();
-                  if (container) container.style.cursor = 'default';
+                  if (container) container.style.cursor = 'crosshair';
                 }
               }}
             />
@@ -160,27 +167,29 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale, zoom = 1 }) => {
               <Group x={centroidCanvas.x * scale} y={centroidCanvas.y * scale} listening={false}>
                   {showAreaName && (
                     <Text
-                      text={`${area.name || `Phòng ${index + 1}`}\nS = ${formatArea(getAreaNetSize(area, projectData.walls))}`}
-                      fontSize={16 / zoom}
+                      text={`${area.name || `Phòng ${index + 1}`}\n${formatArea(getAreaNetSize(area, projectData.walls))}`}
+                      fontSize={actualTextSize * scale}
                       fill={theme.textPrimary}
                       align="center"
                       fontStyle="bold"
                       verticalAlign="middle"
-                      offsetX={100 / zoom}
-                      offsetY={showAreaName && area.name ? 10 / zoom : 0}
-                      width={200 / zoom}
+                      x={-10000}
+                      y={-10000}
+                      width={20000}
+                      height={20000}
                     />
                   )}
                   {!showAreaName && (
                     <Text
-                      text={`S = ${formatArea(getAreaNetSize(area, projectData.walls))}`}
-                      fontSize={14 / zoom}
+                      text={`${formatArea(getAreaNetSize(area, projectData.walls))}`}
+                      fontSize={actualTextSize * scale}
                       fill={theme.textSecondary}
                       align="center"
                       verticalAlign="middle"
-                      offsetX={100 / zoom}
-                      offsetY={0}
-                      width={200 / zoom}
+                      x={-10000}
+                      y={-10000}
+                      width={20000}
+                      height={20000}
                     />
                   )}
               </Group>
@@ -199,12 +208,12 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale, zoom = 1 }) => {
                  draggable
                  onMouseEnter={(e) => {
                     const container = e.target.getStage()?.container();
-                    if (container) container.style.cursor = 'move';
+                    if (container) container.style.cursor = 'crosshair';
                     e.target.scale({ x: 1.5, y: 1.5 });
                  }}
                  onMouseLeave={(e) => {
                     const container = e.target.getStage()?.container();
-                    if (container) container.style.cursor = 'default';
+                    if (container) container.style.cursor = 'crosshair';
                     e.target.scale({ x: 1, y: 1 });
                  }}
                  onDragStart={(e) => {

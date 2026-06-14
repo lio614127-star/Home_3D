@@ -33,7 +33,7 @@ interface DimensionProps {
   zoom?: number;
 }
 
-const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, scale, color = "#555", isManual, isSelected, onClick, onOffsetChange, onPointChange, zoom = 1 }) => {
+export const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, scale, color = "#555", isManual, isSelected, onClick, onOffsetChange, onPointChange, zoom = 1 }) => {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const len = Math.sqrt(dx * dx + dy * dy);
@@ -58,10 +58,10 @@ const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, 
   const op2x = p2x + nx * offsetPx;
   const op2y = p2y + ny * offsetPx;
 
-  // Tick marks
-  const tickLen = 4;
-  const tick1 = [op1x - tickLen, op1y + tickLen, op1x + tickLen, op1y - tickLen];
-  const tick2 = [op2x - tickLen, op2y + tickLen, op2x + tickLen, op2y - tickLen];
+  // Architectural tick marks (45 degree angles)
+  const tickLen = 4 / zoom;
+  const tick1 = [op1x - tickLen, op1y - tickLen, op1x + tickLen, op1y + tickLen];
+  const tick2 = [op2x - tickLen, op2y - tickLen, op2x + tickLen, op2y + tickLen];
 
   // Text position and rotation
   const midX = (op1x + op2x) / 2;
@@ -73,10 +73,16 @@ const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, 
     angle += 180;
   }
 
-  // Slight push away from the line
-  const textPush = 6;
+  // Push text exactly above the line
+  const textPush = 6 / zoom;
   const txtX = midX + nx * textPush;
   const txtY = midY + ny * textPush;
+
+  // Dynamic font size: scales between 11px and 26px based on dimension length
+  const baseFontSize = Math.max(11, Math.min(len * 4, 26));
+  const dynamicFontSize = baseFontSize / zoom;
+
+  const [dragContext, setDragContext] = React.useState<{ ptrDist: number, initOffset: number } | null>(null);
 
   return (
     <Group 
@@ -86,19 +92,43 @@ const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, 
       onMouseEnter={(e) => {
         if (isManual) {
           const container = e.target.getStage()?.container();
-          if (container) container.style.cursor = 'pointer';
+          if (container) container.style.cursor = 'crosshair';
         }
       }}
       onMouseLeave={(e) => {
         if (isManual) {
           const container = e.target.getStage()?.container();
-          if (container) container.style.cursor = 'default';
+          if (container) container.style.cursor = 'crosshair';
         }
       }}
       draggable={!!isManual && isSelected && useUIStore.getState().selectedItems.length <= 1}
       onDragStart={(e) => {
         if (!isManual) return;
         useProjectStore.getState().commitHistory();
+
+        const node = e.target;
+        const stage = node.getStage();
+        const ptr = stage.getPointerPosition();
+        if (!ptr) return;
+        
+        const transform = stage.getAbsoluteTransform().copy().invert();
+        const localPos = transform.point(ptr);
+        const projX = localPos.x / scale;
+        const projY = localPos.y / scale;
+        
+        const dxLine = end.x - start.x;
+        const dyLine = end.y - start.y;
+        const lenLine = Math.sqrt(dxLine*dxLine + dyLine*dyLine);
+        const uxx = dxLine / lenLine;
+        const uyy = dyLine / lenLine;
+        const nxx = -uyy;
+        const nyy = uxx;
+        
+        const vx = projX - start.x;
+        const vy = projY - start.y;
+        const dist = vx * nxx + vy * nyy;
+        
+        setDragContext({ ptrDist: dist, initOffset: offsetDist });
       }}
       onDragMove={(e) => {
         if (!isManual) return;
@@ -107,13 +137,11 @@ const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, 
         const ptr = stage.getPointerPosition();
         if (!ptr) return;
 
-        // Calculate offset based on perpendicular distance from start->end line
-        const stagePos = { x: stage.x(), y: stage.y() };
-        const projX = (ptr.x - stagePos.x) / scale;
-        const projY = (ptr.y - stagePos.y) / scale;
+        const transform = stage.getAbsoluteTransform().copy().invert();
+        const localPos = transform.point(ptr);
+        const projX = localPos.x / scale;
+        const projY = localPos.y / scale;
 
-        // Vector math to find signed distance from point to line
-        // Line equation: A*x + B*y + C = 0
         const dxLine = end.x - start.x;
         const dyLine = end.y - start.y;
         const lenLine = Math.sqrt(dxLine*dxLine + dyLine*dyLine);
@@ -122,48 +150,51 @@ const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, 
         const nxx = -uyy;
         const nyy = uxx;
 
-        // Distance from (start.x, start.y) to (projX, projY) along normal
         const vx = projX - start.x;
         const vy = projY - start.y;
         const dist = vx * nxx + vy * nyy;
         
         if (onOffsetChange) {
-          onOffsetChange(dist);
+          if (dragContext) {
+            onOffsetChange(dragContext.initOffset + (dist - dragContext.ptrDist));
+          } else {
+            onOffsetChange(dist);
+          }
         }
         
-        // Reset node pos since we update via react state
         node.position({ x: 0, y: 0 });
       }}
       onDragEnd={(e) => {
         e.cancelBubble = true;
         e.target.position({ x: 0, y: 0 });
+        setDragContext(null);
       }}
     >
       {/* Witness lines */}
-      <Line points={[p1x + nx * 2, p1y + ny * 2, op1x + nx * 5, op1y + ny * 5]} stroke={color} strokeWidth={1} opacity={0.5} listening={false} />
-      <Line points={[p2x + nx * 2, p2y + ny * 2, op2x + nx * 5, op2y + ny * 5]} stroke={color} strokeWidth={1} opacity={0.5} listening={false} />
+      <Line points={[p1x + nx * (2/zoom), p1y + ny * (2/zoom), op1x + nx * (5/zoom), op1y + ny * (5/zoom)]} stroke={color} strokeWidth={1/zoom} opacity={0.6} listening={false} dash={[4/zoom, 4/zoom]} />
+      <Line points={[p2x + nx * (2/zoom), p2y + ny * (2/zoom), op2x + nx * (5/zoom), op2y + ny * (5/zoom)]} stroke={color} strokeWidth={1/zoom} opacity={0.6} listening={false} dash={[4/zoom, 4/zoom]} />
       
-      {/* Main dimension line (with fat invisible hitbox if manual) */}
-      <Line points={[op1x, op1y, op2x, op2y]} stroke={isSelected ? '#ffff00' : color} strokeWidth={isSelected ? 2 : 1} listening={false} />
+      {/* Main dimension line */}
+      <Line points={[op1x, op1y, op2x, op2y]} stroke={isSelected ? '#ffff00' : color} strokeWidth={isSelected ? 2/zoom : 1/zoom} listening={false} />
       {isManual && (
-        <Line points={[op1x, op1y, op2x, op2y]} stroke="transparent" strokeWidth={20} />
+        <Line points={[op1x, op1y, op2x, op2y]} stroke="transparent" strokeWidth={20/zoom} />
       )}
       
       {/* Ticks */}
-      <Line points={tick1} stroke={color} strokeWidth={1.5} listening={false} />
-      <Line points={tick2} stroke={color} strokeWidth={1.5} listening={false} />
+      <Line points={tick1} stroke={color} strokeWidth={1.5/zoom} listening={false} />
+      <Line points={tick2} stroke={color} strokeWidth={1.5/zoom} listening={false} />
       
       {/* Text */}
       <Group x={txtX} y={txtY} rotation={angle} listening={false}>
         <Text
-          x={-50}
-          y={-7}
+          x={-500}
+          y={-(dynamicFontSize / 2)}
           text={text}
-          fontSize={11}
+          fontSize={dynamicFontSize}
           fill={isSelected ? '#ffff00' : color}
           fontStyle={isSelected ? "bold" : "normal"}
           align="center"
-          width={100}
+          width={1000}
         />
       </Group>
 
@@ -195,12 +226,12 @@ const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, 
             }}
             onMouseEnter={(e: any) => {
               const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = 'move';
+              if (container) container.style.cursor = 'crosshair';
               e.target.scale({ x: 1.4, y: 1.4 });
             }}
             onMouseLeave={(e: any) => {
               const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = 'default';
+              if (container) container.style.cursor = 'crosshair';
               e.target.scale({ x: 1, y: 1 });
             }}
           />
@@ -229,12 +260,12 @@ const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, 
             }}
             onMouseEnter={(e: any) => {
               const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = 'move';
+              if (container) container.style.cursor = 'crosshair';
               e.target.scale({ x: 1.4, y: 1.4 });
             }}
             onMouseLeave={(e: any) => {
               const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = 'default';
+              if (container) container.style.cursor = 'crosshair';
               e.target.scale({ x: 1, y: 1 });
             }}
           />
@@ -250,7 +281,7 @@ export const DimensionLayer: React.FC<Props> = ({ walls, areas, building, scale,
   const theme = useTheme();
   
   return (
-    <Group listening={mode === 'select'}>
+    <Group listening={mode === 'select' || mode === 'measure'}>
       {/* Manual Dimensions */}
 
 

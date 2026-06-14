@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { IProject, ISite, IBuilding, IWall, IArea, IOpening, SelectedItem } from '../types';
+import { buildAreaConstraints, resolveAreaConstraints } from '../core/geometry/constraints';
 import { createDefaultProject } from '../core/project/createDefaultProject';
 
 interface ProjectState {
@@ -163,40 +164,81 @@ export const useProjectStore = create<ProjectState>()(
     data: { ...state.data, walls: [...state.data.walls, wall] }
   })),
 
-  updateWall: (id, updates) => set((state) => ({
-    data: { 
-      ...state.data, 
-      walls: state.data.walls.map(w => w.id === id ? { ...w, ...updates } : w) 
-    }
-  })),
+  updateWall: (id, updates) => set((state) => {
+    const oldWalls = state.data.walls;
+    const oldAreas = state.data.areas;
+    
+    // 1. Detect constraints before changes
+    const constraints = buildAreaConstraints(oldAreas, oldWalls);
+
+    // 2. Apply updates to the specific wall
+    const newWalls = oldWalls.map(w => w.id === id ? { ...w, ...updates } : w);
+
+    // 3. Resolve constraints using new wall geometry
+    const newAreas = resolveAreaConstraints(oldAreas, newWalls, constraints);
+
+    return {
+      data: { 
+        ...state.data, 
+        walls: newWalls,
+        areas: newAreas
+      }
+    };
+  }),
 
   updateConnectedWallEndpoints: (updates) => set((state) => {
+    const oldWalls = state.data.walls;
+    const oldAreas = state.data.areas;
+
+    // 1. Detect constraints before changes
+    const constraints = buildAreaConstraints(oldAreas, oldWalls);
+
     const wallMap = new Map<string, Partial<IWall>>();
     updates.forEach(u => {
       if (!wallMap.has(u.wallId)) wallMap.set(u.wallId, {});
       wallMap.get(u.wallId)![u.type] = u.point;
     });
     
+    const newWalls = oldWalls.map(w => {
+      if (wallMap.has(w.id)) {
+        return { ...w, ...wallMap.get(w.id) };
+      }
+      return w;
+    });
+
+    // 3. Resolve constraints using new wall geometry
+    const newAreas = resolveAreaConstraints(oldAreas, newWalls, constraints);
+
     return {
       data: {
         ...state.data,
-        walls: state.data.walls.map(w => {
-          if (wallMap.has(w.id)) {
-            return { ...w, ...wallMap.get(w.id) };
-          }
-          return w;
-        })
+        walls: newWalls,
+        areas: newAreas
       }
     };
   }),
 
-  deleteWall: (id) => set((state) => ({
-    data: { 
-      ...state.data, 
-      walls: state.data.walls.filter(w => w.id !== id),
-      openings: (state.data.openings || []).filter(o => o.wallId !== id)
-    }
-  })),
+  deleteWall: (id) => set((state) => {
+    const oldWalls = state.data.walls;
+    const oldAreas = state.data.areas;
+
+    // 1. Detect constraints before changes
+    const constraints = buildAreaConstraints(oldAreas, oldWalls);
+
+    const newWalls = oldWalls.filter(w => w.id !== id);
+
+    // 3. Resolve constraints using new wall geometry
+    const newAreas = resolveAreaConstraints(oldAreas, newWalls, constraints);
+
+    return {
+      data: { 
+        ...state.data, 
+        walls: newWalls,
+        areas: newAreas,
+        openings: (state.data.openings || []).filter(o => o.wallId !== id)
+      }
+    };
+  }),
 
   addArea: (area) => set((state) => ({
     data: { ...state.data, areas: [...state.data.areas, area] }

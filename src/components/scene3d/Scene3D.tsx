@@ -101,9 +101,19 @@ export const Scene3D: React.FC = () => {
             return <Wall3D key={wall.id} wall={wall} allWalls={project.walls} baseHeight={wallBaseHeight} openings={wallOpenings} />;
           })}
 
-          {show3DRooms && project.areas.map(area => (
-          <AreaFloor3D key={area.id} area={area} baseHeight={effectiveBaseHeight} />
-          ))}
+          {show3DRooms && project.areas.map((area, index) => {
+            let areaBaseHeight = effectiveBaseHeight;
+            if (area.points && area.points.length > 0) {
+              const midX = area.points.reduce((sum, p) => sum + p.x, 0) / area.points.length;
+              const midZ = area.points.reduce((sum, p) => sum + p.z, 0) / area.points.length;
+              project.areas.forEach(otherArea => {
+                if (otherArea.id !== area.id && otherArea.elevation && otherArea.elevation > 0 && isPointInPolygon({x: midX, z: midZ}, otherArea.points)) {
+                  areaBaseHeight = Math.max(areaBaseHeight, effectiveBaseHeight + otherArea.elevation);
+                }
+              });
+            }
+            return <AreaFloor3D key={area.id} area={area} baseHeight={areaBaseHeight} index={index} />;
+          })}
 
           {show3DOpenings && (project.openings || []).map(opening => {
             const wall = project.walls.find(w => w.id === opening.wallId);

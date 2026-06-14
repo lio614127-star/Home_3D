@@ -115,27 +115,7 @@ export const PropertiesPanel: React.FC = () => {
       );
     }
 
-    if (mode === 'measure') {
-      return (
-        <div style={{ padding: '15px', fontSize: '13px', boxSizing: 'border-box', width: '100%', color: theme.textPrimary }}>
-          <h3 style={{ marginTop: 0, marginBottom: '15px' }}>Công cụ Đo - Mặc định</h3>
-          <div style={{ marginBottom: '10px' }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              Chế độ đo:
-              <select value={toolDefaults.measure.wallMeasureMode} onChange={e => setToolDefaults('measure', { wallMeasureMode: e.target.value })} style={{ width: '100%', padding: '4px' }}>
-                <option value="centerline">Tim tường / Tự do</option>
-                <option value="innerFace">Mép tường trong (A)</option>
-                <option value="outerFace">Mép tường ngoài (B)</option>
-                <option value="thickness">Độ dày tường</option>
-              </select>
-            </label>
-          </div>
-          <div style={{ marginBottom: '10px' }}>
-            <label style={{ display: 'flex', justifyContent: 'space-between' }}>Khoảng offset line: <input type="number" step="0.1" value={toolDefaults.measure.offsetDistance} onChange={e => setToolDefaults('measure', { offsetDistance: parseFloat(e.target.value) || 0.6 })} style={{ width: '60px' }} /></label>
-          </div>
-        </div>
-      );
-    }
+
 
     return (
       <div style={{ padding: '15px', fontSize: '13px', boxSizing: 'border-box', width: '100%', color: theme.textPrimary }}>
@@ -281,6 +261,37 @@ export const PropertiesPanel: React.FC = () => {
     if (!area) return null;
     
     const areaValue = getAreaNetSize(area, project.walls);
+    
+    // Calculate bounding box for width/depth editing
+    const minX = Math.min(...area.points.map(p => p.x));
+    const maxX = Math.max(...area.points.map(p => p.x));
+    const minZ = Math.min(...area.points.map(p => p.z));
+    const maxZ = Math.max(...area.points.map(p => p.z));
+    const width = maxX - minX;
+    const depth = maxZ - minZ;
+    const dynamicTextSize = Math.max(0.2, Math.min(width, depth) * 0.15);
+
+    const handleWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const newWidth = parseFloat(e.target.value) || 0;
+      if (newWidth <= 0 || width <= 0) return;
+      const scaleX = newWidth / width;
+      const newPoints = area.points.map(p => ({
+        x: normalizeCoord(minX + (p.x - minX) * scaleX),
+        z: p.z
+      }));
+      updateArea(area.id, { points: newPoints });
+    };
+
+    const handleDepthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const newDepth = parseFloat(e.target.value) || 0;
+      if (newDepth <= 0 || depth <= 0) return;
+      const scaleZ = newDepth / depth;
+      const newPoints = area.points.map(p => ({
+        x: p.x,
+        z: normalizeCoord(minZ + (p.z - minZ) * scaleZ)
+      }));
+      updateArea(area.id, { points: newPoints });
+    };
 
     return (
       <div style={{ padding: '15px', fontSize: '13px', boxSizing: 'border-box', width: '100%', color: theme.textPrimary }}>
@@ -295,8 +306,37 @@ export const PropertiesPanel: React.FC = () => {
           <input type="text" value={area.type || ''} onChange={e => updateArea(area.id, { type: e.target.value })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
         </div>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Màu sắc khu vực</label>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <input type="color" value={area.color || theme.roomStroke} onChange={e => updateArea(area.id, { color: e.target.value })} style={{ cursor: 'pointer', padding: '0', border: 'none', width: '40px', height: '30px', borderRadius: '4px' }} />
+            <button onClick={() => updateArea(area.id, { color: undefined })} style={{ padding: '5px 10px', fontSize: '12px', cursor: 'pointer', border: '1px solid #ccc', borderRadius: '4px', background: theme.toolbarBg, color: theme.textPrimary }}>Mặc định</button>
+          </div>
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>Độ cao nền (m)</label>
           <input type="number" step="0.01" value={area.elevation || 0} onChange={e => updateArea(area.id, { elevation: Math.max(0, parseFloat(e.target.value) || 0) })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Chiều ngang (m)</label>
+          <input type="number" step="0.01" value={Number(width.toFixed(3))} onChange={handleWidthChange} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px', fontWeight: 'bold', color: theme.primary }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Chiều dọc (m)</label>
+          <input type="number" step="0.01" value={Number(depth.toFixed(3))} onChange={handleDepthChange} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px', fontWeight: 'bold', color: theme.primary }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Cỡ chữ hiển thị (m)</label>
+          <input 
+            type="number" 
+            step="0.1" 
+            value={area.textSize || ''} 
+            placeholder={`Tự động (${dynamicTextSize.toFixed(2)})`}
+            onChange={e => {
+              const val = parseFloat(e.target.value);
+              updateArea(area.id, { textSize: isNaN(val) ? undefined : Math.max(0.1, val) });
+            }} 
+            style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} 
+          />
         </div>
         <div style={{ marginTop: '15px' }}>
           <p><strong>{t("field.area")}:</strong> {areaValue.toFixed(2)} m²</p>

@@ -51,7 +51,7 @@ export function roundToDecimals(value: number, decimals: number): number {
 const VERTEX_TOLERANCE_PX = 30; // Increased to make corners much stickier when closing loops
 const EDGE_TOLERANCE_PX = 10;
 
-export function getUnifiedSnapCandidates(pointerX: number, pointerZ: number, project: IProject, measureMode?: string, gridOpts?: { snapToGrid: boolean, gridMinorStep: number }): SnapCandidate[] {
+export function getUnifiedSnapCandidates(pointerX: number, pointerZ: number, project: IProject, gridOpts?: { snapToGrid: boolean, gridMinorStep: number }): SnapCandidate[] {
   const candidates: SnapCandidate[] = [];
 
   // 1. Site Corners
@@ -238,7 +238,6 @@ export function resolveBestSnap(
     startPoint?: { x: number; z: number }; // For ortho
     showAlignmentGuides?: boolean;
     isCreationMode?: boolean;
-    measureMode?: string;
   }
 ): SnapResult {
   let bestCandidate: SnapCandidate | null = null;
@@ -266,7 +265,7 @@ export function resolveBestSnap(
   let finalPriority: number = 99;
 
   if (opts.snapToPoints) {
-    const candidates = getUnifiedSnapCandidates(pointerX, pointerZ, project, opts.measureMode, { snapToGrid: opts.snapToGrid, gridMinorStep: opts.gridMinorStep });
+    const candidates = getUnifiedSnapCandidates(pointerX, pointerZ, project, { snapToGrid: opts.snapToGrid, gridMinorStep: opts.gridMinorStep });
     
     // Evaluate candidates with strict priority logic
     for (const c of candidates) {
@@ -340,11 +339,20 @@ export function resolveBestSnap(
     finalPriority = bestCandidate.priority;
   } else if (opts.snapToGrid) {
     const activeStep = opts.gridMinorStep || 0.5;
-    finalX = roundToStep(projX, activeStep);
-    finalZ = roundToStep(projZ, activeStep);
+    
+    // If drawing from a start point, snap relative to the start point so dimensions are exact multiples of the grid
+    if (opts.startPoint) {
+      finalX = opts.startPoint.x + roundToStep(projX - opts.startPoint.x, activeStep);
+      finalZ = opts.startPoint.z + roundToStep(projZ - opts.startPoint.z, activeStep);
+      finalLabel = `Kéo dài ${activeStep.toFixed(2)}m`;
+    } else {
+      finalX = roundToStep(projX, activeStep);
+      finalZ = roundToStep(projZ, activeStep);
+      finalLabel = `Giao điểm lưới ${activeStep.toFixed(2)}m`;
+    }
+    
     snapped = true;
     finalType = 'grid';
-    finalLabel = `Giao điểm lưới ${activeStep.toFixed(2)}m`;
     finalPriority = 3;
     
     if (opts.showAlignmentGuides) {
@@ -356,6 +364,22 @@ export function resolveBestSnap(
   } else if (opts.orthoMode && !!opts.startPoint) {
     snapped = true;
     finalType = 'ortho';
+  }
+
+  // ENFORCE STRICT ORTHO LOCK AT THE END
+  // This ensures that even if we snapped to a point/edge, the line remains perfectly horizontal/vertical
+  if (opts.orthoMode && opts.startPoint) {
+    if (projZ === opts.startPoint.z) {
+      finalZ = opts.startPoint.z;
+      if (snapped && finalType !== 'ortho' && finalType !== 'grid') {
+        finalLabel = (finalLabel ? finalLabel + ' ' : '') + '(Vuông góc)';
+      }
+    } else if (projX === opts.startPoint.x) {
+      finalX = opts.startPoint.x;
+      if (snapped && finalType !== 'ortho' && finalType !== 'grid') {
+        finalLabel = (finalLabel ? finalLabel + ' ' : '') + '(Vuông góc)';
+      }
+    }
   }
 
   if (opts.isCreationMode) {

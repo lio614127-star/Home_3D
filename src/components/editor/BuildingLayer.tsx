@@ -47,14 +47,20 @@ export const BuildingLayer: React.FC<Props> = ({ building, scale }) => {
         strokeWidth={isSelected ? 4 : 3}
         dash={isSelected ? [] : [8, 6]}
       />
-      <Text 
-        x={pos.x * scale + 5} 
-        y={pos.y * scale - 20} 
-        text={t("canvas.mainBuilding")} 
-        fontSize={12} 
-        fill={theme.textPrimary}
-        listening={false}
-      />
+      <Group x={(building.origin.x + building.width / 2) * scale} y={(building.origin.z + building.depth / 2) * scale} listening={false}>
+        <Text 
+          x={-10000} 
+          y={-10000} 
+          width={20000}
+          height={20000}
+          text={t("canvas.mainBuilding")} 
+          fontSize={(building.textSize || 1.0) * scale} 
+          fill={theme.textPrimary}
+          align="center"
+          verticalAlign="middle"
+          listening={false}
+        />
+      </Group>
     </Group>
   );
 };
