@@ -10,7 +10,7 @@ import { OpeningLayer } from './OpeningLayer';
 import { DimensionLayer } from './DimensionLayer';
 import { GridLayer } from './GridLayer';
 import { GuideLayer } from './GuideLayer';
-import { canvasToProject, projectToCanvas, rectContainsPoint, rectIntersectsSegment, rectIntersectsPolygon, getWallLength, RectProject, getMeasureSnapCandidates, MeasureCandidate, formatMeters, formatArea, formatSize, normalizeCoord } from '../../core/geometry/math';
+import { canvasToProject, projectToCanvas, rectContainsPoint, rectIntersectsSegment, rectIntersectsPolygon, getWallLength, getWallCenterline, getWallRenderLine, RectProject, getMeasureSnapCandidates, MeasureCandidate, formatMeters, formatArea, formatSize, normalizeCoord } from '../../core/geometry/math';
 import { resolveBestSnap, SnapCandidate } from '../../core/geometry/snap';
 import { SelectedItem } from '../../types';
 import { useI18nStore } from '../../store/useI18nStore';
@@ -159,6 +159,22 @@ export const Canvas2D: React.FC = () => {
           setMode('select');
         }
       }
+
+      if (e.type === 'keydown' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) return;
+        const { setMode, viewMode, setViewMode } = useUIStore.getState();
+        if (e.code === 'Digit1') setMode('addSite');
+        if (e.code === 'Digit2') setMode('addWall');
+        if (e.code === 'Digit3') setMode('addArea');
+        if (e.code === 'Digit4') setMode('addDoor');
+        if (e.code === 'Digit5') setMode('addWindow');
+        if (e.code === 'KeyQ') {
+           e.preventDefault();
+           if (viewMode === '2d') setViewMode('3d');
+           else if (viewMode === '3d') setViewMode('split');
+           else setViewMode('2d');
+        }
+      }
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKey);
@@ -243,6 +259,8 @@ export const Canvas2D: React.FC = () => {
   };
 
   const handlePointerDown = (e: any) => {
+    if (isSpaceDown) return;
+    
     if (mode === 'select') {
       const coords = getProjectCoords(e);
       if (!coords) return;
@@ -341,7 +359,10 @@ export const Canvas2D: React.FC = () => {
     snappedPointerRef.current = { x: finalX, z: finalZ, type: finalType, label: snapState.label, priority: snapState.priority };
     useUIStore.getState().setActiveGuides(snapState.guides || []);
     useUIStore.getState().setActiveSnapPoint(
-      snapState.snapped ? { x: finalX, y: finalZ, type: finalType || 'unknown', label: snapState.label, priority: snapState.priority } : null
+      snapState.snapped ? { 
+        x: finalX, y: finalZ, type: finalType || 'unknown', label: snapState.label, priority: snapState.priority,
+        wallThickness: snapState.wallThickness, wallJustification: snapState.wallJustification
+      } : null
     );
 
     if (currentMode !== 'select') {
@@ -486,6 +507,8 @@ export const Canvas2D: React.FC = () => {
   };
 
   const handleStageClick = (e: any) => {
+    if (isSpaceDown) return;
+
     // If right click, cancel chain
     if (e.evt.button === 2) {
       if (mode === 'addWall') setWallChainAnchor(null);
@@ -593,7 +616,18 @@ export const Canvas2D: React.FC = () => {
     const currentAnchor = mode === 'addWall' ? wallChainAnchor : (mode === 'measure' ? measureChainAnchor : null);
 
     if (!currentAnchor) {
-      if (mode === 'addWall') setWallChainAnchor({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
+      if (mode === 'addWall') {
+        const snapPoint = useUIStore.getState().activeSnapPoint;
+        if (snapPoint && snapPoint.wallJustification) {
+          const currentDefaults = useUIStore.getState().toolDefaults;
+          useUIStore.getState().setToolDefaults('wall', {
+            ...currentDefaults.wall,
+            justification: snapPoint.wallJustification,
+            thickness: snapPoint.wallThickness || currentDefaults.wall.thickness
+          });
+        }
+        setWallChainAnchor({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
+      }
       if (mode === 'measure') setMeasureChainAnchor({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
       setMousePos({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
     } else {
@@ -617,6 +651,7 @@ export const Canvas2D: React.FC = () => {
             height: useUIStore.getState().toolDefaults.wall.height,
             levelId: useUIStore.getState().toolDefaults.wall.levelId,
             layer: useUIStore.getState().toolDefaults.wall.layer,
+            justification: useUIStore.getState().toolDefaults.wall.justification,
             visible: true,
             locked: false
           });
@@ -670,50 +705,15 @@ export const Canvas2D: React.FC = () => {
 
     if (!mousePos) return <Group listening={false}>{elements}</Group>;
 
-    // Render snap marker
-    if (lastSnapType && mode !== 'select') {
-      const snapCanvasPos = projectToCanvas(mousePos.x, mousePos.z);
-      const isGrid = lastSnapType === 'grid';
-      const markerColor = isGrid ? '#00bcd4' : '#4caf50';
-      const labelText = isGrid ? `Giao điểm lưới ${zoom >= 1.5 ? '0.25m' : '0.50m'}` : 
-                       (lastSnapType === 'endpoint' ? 'Điểm mút' : 
-                       (lastSnapType === 'corner' ? 'Góc' : 
-                       (lastSnapType === 'measure' ? 'Đo' : lastSnapType)));
-      
-      elements.push(
-        <Group key="snap-marker" x={snapCanvasPos.x * PX_PER_METER} y={snapCanvasPos.y * PX_PER_METER} listening={false}>
-          {isGrid && (
-            <>
-              <Line points={[-10 / zoom, 0, 10 / zoom, 0]} stroke={markerColor} strokeWidth={1 / zoom} />
-              <Line points={[0, -10 / zoom, 0, 10 / zoom]} stroke={markerColor} strokeWidth={1 / zoom} />
-            </>
-          )}
-          <Circle
-            radius={isGrid ? 3 / zoom : 5 / zoom}
-            fill={markerColor}
-            stroke="#fff"
-            strokeWidth={1.5 / zoom}
-          />
-          <Text
-            x={8 / zoom}
-            y={-12 / zoom}
-            text={labelText}
-            fontSize={11 / zoom}
-            fill={markerColor}
-            fontStyle="bold"
-            shadowColor="#000"
-            shadowBlur={2}
-            shadowOpacity={0.8}
-            shadowOffset={{ x: 0, y: 0 }}
-          />
-        </Group>
-      );
-    }
 
     // Wall preview
     if (mode === 'addWall' && wallChainAnchor) {
-      const p1 = projectToCanvas(wallChainAnchor.x, wallChainAnchor.z);
-      const p2 = projectToCanvas(mousePos.x, mousePos.z);
+      const { thickness, justification } = useUIStore.getState().toolDefaults.wall;
+      const dummyWall = { id: 'dummy', start: wallChainAnchor, end: mousePos, thickness, justification, visible: true };
+      const renderLine = getWallRenderLine(dummyWall as any, project.walls);
+
+      const p1 = projectToCanvas(renderLine.start.x, renderLine.start.z);
+      const p2 = projectToCanvas(renderLine.end.x, renderLine.end.z);
       
       const dx = mousePos.x - wallChainAnchor.x;
       const dz = mousePos.z - wallChainAnchor.z;
@@ -721,6 +721,13 @@ export const Canvas2D: React.FC = () => {
 
       elements.push(
         <Group key="preview-wall" listening={false}>
+          <Line
+            points={[p1.x * PX_PER_METER, p1.y * PX_PER_METER, p2.x * PX_PER_METER, p2.y * PX_PER_METER]}
+            stroke="#ff9800"
+            strokeWidth={thickness * PX_PER_METER * zoom}
+            opacity={0.5}
+            lineCap="square"
+          />
           <Line
             points={[p1.x * PX_PER_METER, p1.y * PX_PER_METER, p2.x * PX_PER_METER, p2.y * PX_PER_METER]}
             stroke="#ff9800"
@@ -962,12 +969,12 @@ export const Canvas2D: React.FC = () => {
                 zoom={zoom} 
               />
             )}
-            <SiteLayer site={project.site} scale={PX_PER_METER} />
+            <SiteLayer site={project.site} scale={PX_PER_METER} zoom={zoom} />
             <BuildingLayer building={project.building} scale={PX_PER_METER} />
-            <AreaLayer areas={project.areas} scale={PX_PER_METER} />
-            <WallLayer walls={project.walls} scale={PX_PER_METER} />
-            {show3DOpenings && <OpeningLayer openings={project.openings || []} walls={project.walls} scale={PX_PER_METER} />}
-            <DimensionLayer walls={project.walls} areas={project.areas} building={project.building} scale={PX_PER_METER} />
+            <AreaLayer areas={project.areas} scale={PX_PER_METER} zoom={zoom} />
+            <WallLayer walls={project.walls} scale={PX_PER_METER} zoom={zoom} />
+            {show3DOpenings && <OpeningLayer openings={project.openings || []} walls={project.walls} scale={PX_PER_METER} zoom={zoom} />}
+            <DimensionLayer walls={project.walls} areas={project.areas} building={project.building} scale={PX_PER_METER} zoom={zoom} />
             <GuideLayer 
               scale={PX_PER_METER} 
               zoom={zoom} 

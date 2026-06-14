@@ -21,11 +21,265 @@ export const normalizeCoord = (value: number): number => {
 };
 
 // Derived values
-export const getWallLength = (wall: IWall): number => {
+export function getWallLength(wall: { start: {x: number, z: number}, end: {x: number, z: number} }) {
   const dx = wall.end.x - wall.start.x;
   const dz = wall.end.z - wall.start.z;
   return Math.sqrt(dx * dx + dz * dz);
-};
+}
+
+/**
+ * Returns the visually offset centerline of the wall based on its justification.
+ * If justification is 'left' or 'right', it offsets the start and end by half the thickness
+ * along the wall's normal vector.
+ */
+export function getWallCenterline(wall: { start: {x: number, z: number}, end: {x: number, z: number}, thickness?: number, justification?: 'center' | 'left' | 'right' }): { start: { x: number; z: number }, end: { x: number; z: number } } {
+  if (!wall.justification || wall.justification === 'center') {
+    return { start: { ...wall.start }, end: { ...wall.end } };
+  }
+
+  const dx = wall.end.x - wall.start.x;
+  const dz = wall.end.z - wall.start.z;
+  const len = Math.sqrt(dx * dx + dz * dz);
+
+  if (len === 0) return { start: { ...wall.start }, end: { ...wall.end } };
+
+  // Normal vector (left side)
+  const nx = -dz / len;
+  const nz = dx / len;
+
+  const offsetAmount = ((wall.thickness || 0.2) / 2);
+  // Invert direction: "Mép ngoài" (left) now shifts inward/right (-1) when drawn clockwise.
+  const direction = wall.justification === 'left' ? -1 : (wall.justification === 'right' ? 1 : 0);
+
+  return {
+    start: {
+      x: wall.start.x + nx * offsetAmount * direction,
+      z: wall.start.z + nz * offsetAmount * direction
+    },
+    end: {
+      x: wall.end.x + nx * offsetAmount * direction,
+      z: wall.end.z + nz * offsetAmount * direction
+    }
+  };
+}
+
+export function lineIntersection(p1: {x: number, z: number}, p2: {x: number, z: number}, p3: {x: number, z: number}, p4: {x: number, z: number}) {
+  const denominator = (p1.x - p2.x) * (p3.z - p4.z) - (p1.z - p2.z) * (p3.x - p4.x);
+  if (Math.abs(denominator) < 0.0001) return null; // parallel
+  
+  const t = ((p1.x - p3.x) * (p3.z - p4.z) - (p1.z - p3.z) * (p3.x - p4.x)) / denominator;
+  return {
+    x: p1.x + t * (p2.x - p1.x),
+    z: p1.z + t * (p2.z - p1.z)
+  };
+}
+
+export function getWallRenderLine(wall: IWall, allWalls: IWall[]): { start: {x: number, z: number}, end: {x: number, z: number} } {
+  const { start: baseStart, end: baseEnd } = getWallCenterline(wall);
+  let renderStart = { ...baseStart };
+  let renderEnd = { ...baseEnd };
+
+  const eps = 0.05; // 5cm tolerance to robustly detect corners even if slightly misaligned
+  const isSamePoint = (p1: {x: number, z: number}, p2: {x: number, z: number}) => Math.abs(p1.x - p2.x) < eps && Math.abs(p1.z - p2.z) < eps;
+
+  // Find walls connected to start
+  const startConnected = allWalls.filter(w => w.id !== wall.id && w.visible && (isSamePoint(w.start, wall.start) || isSamePoint(w.end, wall.start)));
+  if (startConnected.length === 1) {
+    const other = getWallCenterline(startConnected[0]);
+    const pInt = lineIntersection(baseStart, baseEnd, other.start, other.end);
+    if (pInt) renderStart = pInt;
+  } else if (startConnected.length === 0) {
+    // Unconnected start: shrink by t/2 to compensate for square lineCap
+    const dx = baseEnd.x - baseStart.x;
+    const dz = baseEnd.z - baseStart.z;
+    const len = Math.sqrt(dx*dx + dz*dz);
+    const t = (wall.thickness || 0.2) / 2;
+    if (len > t) {
+      renderStart.x += (dx / len) * t;
+      renderStart.z += (dz / len) * t;
+    }
+  }
+
+  // Find walls connected to end
+  const endConnected = allWalls.filter(w => w.id !== wall.id && w.visible && (isSamePoint(w.start, wall.end) || isSamePoint(w.end, wall.end)));
+  if (endConnected.length === 1) {
+    const other = getWallCenterline(endConnected[0]);
+    const pInt = lineIntersection(baseStart, baseEnd, other.start, other.end);
+    if (pInt) renderEnd = pInt;
+  } else if (endConnected.length === 0) {
+    // Unconnected end: shrink by t/2 to compensate for square lineCap
+    const dx = baseStart.x - baseEnd.x;
+    const dz = baseStart.z - baseEnd.z;
+    const len = Math.sqrt(dx*dx + dz*dz);
+    const t = (wall.thickness || 0.2) / 2;
+    if (len > t) {
+      renderEnd.x += (dx / len) * t;
+      renderEnd.z += (dz / len) * t;
+    }
+  }
+
+  return { start: renderStart, end: renderEnd };
+}
+
+export function getWallPolygon(wall: IWall, allWalls: IWall[]) {
+  const { start: baseStart, end: baseEnd } = getWallCenterline(wall);
+  const dx = baseEnd.x - baseStart.x;
+  const dz = baseEnd.z - baseStart.z;
+  const len = Math.sqrt(dx*dx + dz*dz);
+  if (len === 0) return null;
+  const nx = -dz / len;
+  const nz = dx / len;
+  const t = (wall.thickness || 0.2) / 2;
+
+  const lLeft = { s: { x: baseStart.x + nx * t, z: baseStart.z + nz * t }, e: { x: baseEnd.x + nx * t, z: baseEnd.z + nz * t } };
+  const lRight = { s: { x: baseStart.x - nx * t, z: baseStart.z - nz * t }, e: { x: baseEnd.x - nx * t, z: baseEnd.z - nz * t } };
+
+  let pLeftStart = lLeft.s;
+  let pRightStart = lRight.s;
+  let pLeftEnd = lLeft.e;
+  let pRightEnd = lRight.e;
+
+  const eps = 0.05;
+  const isSamePoint = (p1: any, p2: any) => Math.abs(p1.x - p2.x) < eps && Math.abs(p1.z - p2.z) < eps;
+
+  const startConnected = allWalls.filter(w => w.id !== wall.id && w.visible && (isSamePoint(w.start, wall.start) || isSamePoint(w.end, wall.start)));
+  if (startConnected.length === 1) {
+    const otherCenter = getWallCenterline(startConnected[0]);
+    const odx = otherCenter.end.x - otherCenter.start.x;
+    const odz = otherCenter.end.z - otherCenter.start.z;
+    const olen = Math.sqrt(odx*odx + odz*odz);
+    if (olen > 0) {
+      const onx = -odz / olen;
+      const onz = odx / olen;
+      const ot = (startConnected[0].thickness || 0.2) / 2;
+      const oLeft = { s: { x: otherCenter.start.x + onx * ot, z: otherCenter.start.z + onz * ot }, e: { x: otherCenter.end.x + onx * ot, z: otherCenter.end.z + onz * ot } };
+      const oRight = { s: { x: otherCenter.start.x - onx * ot, z: otherCenter.start.z - onz * ot }, e: { x: otherCenter.end.x - onx * ot, z: otherCenter.end.z - onz * ot } };
+
+      const iLL = lineIntersection(lLeft.s, lLeft.e, oLeft.s, oLeft.e);
+      const iLR = lineIntersection(lLeft.s, lLeft.e, oRight.s, oRight.e);
+      const iRL = lineIntersection(lRight.s, lRight.e, oLeft.s, oLeft.e);
+      const iRR = lineIntersection(lRight.s, lRight.e, oRight.s, oRight.e);
+
+      const vAx = dx / len;
+      const vAz = dz / len;
+      const isStartOther = isSamePoint(startConnected[0].start, wall.start);
+      const vBx = (isStartOther ? odx : -odx) / olen;
+      const vBz = (isStartOther ? odz : -odz) / olen;
+
+      const bisectorX = vAx + vBx;
+      const bisectorZ = vAz + vBz;
+      
+      const dotLL_RR = (iLL && iRR) ? Math.abs((iLL.x - iRR.x) * bisectorX + (iLL.z - iRR.z) * bisectorZ) : -1;
+      const dotLR_RL = (iLR && iRL) ? Math.abs((iLR.x - iRL.x) * bisectorX + (iLR.z - iRL.z) * bisectorZ) : -1;
+
+      if (dotLL_RR >= dotLR_RL && iLL && iRR) {
+         pLeftStart = iLL;
+         pRightStart = iRR;
+      } else if (iLR && iRL) {
+         pLeftStart = iLR;
+         pRightStart = iRL;
+      }
+    }
+  }
+
+  const endConnected = allWalls.filter(w => w.id !== wall.id && w.visible && (isSamePoint(w.start, wall.end) || isSamePoint(w.end, wall.end)));
+  if (endConnected.length === 1) {
+    const otherCenter = getWallCenterline(endConnected[0]);
+    const odx = otherCenter.end.x - otherCenter.start.x;
+    const odz = otherCenter.end.z - otherCenter.start.z;
+    const olen = Math.sqrt(odx*odx + odz*odz);
+    if (olen > 0) {
+      const onx = -odz / olen;
+      const onz = odx / olen;
+      const ot = (endConnected[0].thickness || 0.2) / 2;
+      const oLeft = { s: { x: otherCenter.start.x + onx * ot, z: otherCenter.start.z + onz * ot }, e: { x: otherCenter.end.x + onx * ot, z: otherCenter.end.z + onz * ot } };
+      const oRight = { s: { x: otherCenter.start.x - onx * ot, z: otherCenter.start.z - onz * ot }, e: { x: otherCenter.end.x - onx * ot, z: otherCenter.end.z - onz * ot } };
+
+      const iLL = lineIntersection(lLeft.s, lLeft.e, oLeft.s, oLeft.e);
+      const iLR = lineIntersection(lLeft.s, lLeft.e, oRight.s, oRight.e);
+      const iRL = lineIntersection(lRight.s, lRight.e, oLeft.s, oLeft.e);
+      const iRR = lineIntersection(lRight.s, lRight.e, oRight.s, oRight.e);
+
+      const vAx = -dx / len;
+      const vAz = -dz / len;
+      const isStartOther = isSamePoint(endConnected[0].start, wall.end);
+      const vBx = (isStartOther ? odx : -odx) / olen;
+      const vBz = (isStartOther ? odz : -odz) / olen;
+
+      const bisectorX = vAx + vBx;
+      const bisectorZ = vAz + vBz;
+      
+      const dotLL_RR = (iLL && iRR) ? Math.abs((iLL.x - iRR.x) * bisectorX + (iLL.z - iRR.z) * bisectorZ) : -1;
+      const dotLR_RL = (iLR && iRL) ? Math.abs((iLR.x - iRL.x) * bisectorX + (iLR.z - iRL.z) * bisectorZ) : -1;
+
+      if (dotLL_RR >= dotLR_RL && iLL && iRR) {
+         pLeftEnd = iLL;
+         pRightEnd = iRR;
+      } else if (iLR && iRL) {
+         pLeftEnd = iLR;
+         pRightEnd = iRL;
+      }
+    }
+  }
+
+  return { pLeftStart, pRightStart, pLeftEnd, pRightEnd, nx, nz, baseStart, len };
+}
+
+export function subtractOverlappingWalls(p1: {x: number, z: number}, p2: {x: number, z: number}, walls: IWall[]): {start: {x: number, z: number}, end: {x: number, z: number}}[] {
+  let intervals: {t1: number, t2: number}[] = [{t1: 0, t2: 1}];
+  
+  const dx = p2.x - p1.x;
+  const dz = p2.z - p1.z;
+  const lenSq = dx * dx + dz * dz;
+  if (lenSq < 0.0001) return [{start: p1, end: p2}];
+  const len = Math.sqrt(lenSq);
+
+  const distToLine = (p: {x: number, z: number}, a: {x: number, z: number}, b: {x: number, z: number}) => {
+    return Math.abs((b.z - a.z) * p.x - (b.x - a.x) * p.z + b.x * a.z - b.z * a.x) / len;
+  };
+
+  walls.forEach(w => {
+    if (!w.visible) return;
+    
+    const center = getWallCenterline(w);
+    const t = (w.thickness || 0.2) / 2 + 0.05;
+    
+    // Check if the area edge is within the wall's physical footprint
+    if (distToLine(center.start, p1, p2) > t || distToLine(center.end, p1, p2) > t) return;
+
+    // Project center.start and center.end onto p1-p2
+    const dxA = center.start.x - p1.x;
+    const dzA = center.start.z - p1.z;
+    const tStartProj = (dxA * dx + dzA * dz) / lenSq;
+    
+    const dxB = center.end.x - p1.x;
+    const dzB = center.end.z - p1.z;
+    const tEndProj = (dxB * dx + dzB * dz) / lenSq;
+
+    let minT = Math.min(tStartProj, tEndProj);
+    let maxT = Math.max(tStartProj, tEndProj);
+    
+    const newIntervals: {t1: number, t2: number}[] = [];
+    for (const iv of intervals) {
+      if (maxT <= iv.t1 || minT >= iv.t2) {
+        newIntervals.push(iv);
+      } else {
+        if (iv.t1 < minT) {
+          newIntervals.push({t1: iv.t1, t2: minT});
+        }
+        if (iv.t2 > maxT) {
+          newIntervals.push({t1: maxT, t2: iv.t2});
+        }
+      }
+    }
+    intervals = newIntervals;
+  });
+
+  return intervals.filter(iv => iv.t2 - iv.t1 > 0.01).map(iv => ({
+    start: { x: p1.x + dx * iv.t1, z: p1.z + dz * iv.t1 },
+    end: { x: p1.x + dx * iv.t2, z: p1.z + dz * iv.t2 }
+  }));
+}
 
 export const getWallEndFromLength = (start: {x: number, z: number}, end: {x: number, z: number}, newLength: number) => {
   const dx = end.x - start.x;
@@ -42,18 +296,19 @@ export const getWallEndFromLength = (start: {x: number, z: number}, end: {x: num
 // Legacy getRoomArea removed - use getPolygonArea(area.points) instead
 
 export const getOpeningCenter = (wall: IWall, offset: number, openingWidth: number) => {
-  const dx = wall.end.x - wall.start.x;
-  const dz = wall.end.z - wall.start.z;
+  const { start, end } = getWallCenterline(wall);
+  const dx = end.x - start.x;
+  const dz = end.z - start.z;
   const len = Math.sqrt(dx*dx + dz*dz);
-  if (len === 0) return { x: wall.start.x, z: wall.start.z };
+  if (len === 0) return { x: start.x, z: start.z, yaw: 0 };
   
   const dirX = dx / len;
   const dirZ = dz / len;
   
   const centerDistance = offset + openingWidth / 2;
   return {
-    x: wall.start.x + dirX * centerDistance,
-    z: wall.start.z + dirZ * centerDistance,
+    x: start.x + dirX * centerDistance,
+    z: start.z + dirZ * centerDistance,
     yaw: -Math.atan2(dz, dx)
   };
 };
@@ -295,3 +550,92 @@ export const getMeasureSnapCandidates = (
 
   return candidates;
 };
+
+export function isPointInPolygon(point: { x: number; z: number }, vs: { x: number; z: number }[]) {
+  let x = point.x, z = point.z;
+  let inside = false;
+  for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+    let xi = vs[i].x, zi = vs[i].z;
+    let xj = vs[j].x, zj = vs[j].z;
+    let intersect = ((zi > z) != (zj > z))
+        && (x < (xj - xi) * (z - zi) / (zj - zi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// Sutherland-Hodgman Polygon Clipping algorithm
+export function clipPolygon(subjectPolygon: {x: number, z: number}[], clipPolygon: {x: number, z: number}[]): {x: number, z: number}[] {
+  let outputList = subjectPolygon;
+  const cp1 = clipPolygon[clipPolygon.length - 1];
+
+  for (let j = 0; j < clipPolygon.length; j++) {
+    let cp2 = clipPolygon[j];
+    let cp1ToUse = j === 0 ? cp1 : clipPolygon[j - 1];
+    let inputList = outputList;
+    outputList = [];
+    if (inputList.length === 0) break;
+
+    let s = inputList[inputList.length - 1];
+    
+    // Function to check if a point is inside the clip edge
+    const isInside = (p: {x: number, z: number}) => {
+      return (cp2.x - cp1ToUse.x) * (p.z - cp1ToUse.z) - (cp2.z - cp1ToUse.z) * (p.x - cp1ToUse.x) >= 0;
+    };
+    
+    // Compute intersection of line s-e with line cp1-cp2
+    const computeIntersection = (s: {x: number, z: number}, e: {x: number, z: number}) => {
+      const dcx = cp1ToUse.x - cp2.x;
+      const dcz = cp1ToUse.z - cp2.z;
+      const dpx = s.x - e.x;
+      const dpz = s.z - e.z;
+      const n1 = cp1ToUse.x * cp2.z - cp1ToUse.z * cp2.x;
+      const n2 = s.x * e.z - s.z * e.x;
+      const n3 = 1.0 / (dcx * dpz - dcz * dpx);
+      return {
+        x: (n1 * dpx - n2 * dcx) * n3,
+        z: (n1 * dpz - n2 * dcz) * n3
+      };
+    };
+
+    for (let i = 0; i < inputList.length; i++) {
+      let e = inputList[i];
+      if (isInside(e)) {
+        if (!isInside(s)) {
+          outputList.push(computeIntersection(s, e));
+        }
+        outputList.push(e);
+      } else if (isInside(s)) {
+        outputList.push(computeIntersection(s, e));
+      }
+      s = e;
+    }
+  }
+  return outputList;
+}
+
+export function getAreaNetSize(area: IArea, walls: IWall[]): number {
+  const grossArea = getPolygonArea(area.points);
+  let totalWallOverlap = 0;
+
+  walls.forEach(wall => {
+    if (!wall.visible) return;
+    
+    const poly = getWallPolygon(wall, walls);
+    if (!poly) return;
+    
+    // The 4 corners of the wall polygon (counter-clockwise order)
+    const wallPolygon = [poly.pLeftStart, poly.pRightStart, poly.pRightEnd, poly.pLeftEnd];
+    
+    try {
+      const clipped = clipPolygon(area.points, wallPolygon);
+      if (clipped.length >= 3) {
+        totalWallOverlap += getPolygonArea(clipped);
+      }
+    } catch (e) {
+      console.warn("Failed to clip wall", e);
+    }
+  });
+
+  return Math.max(0, grossArea - totalWallOverlap);
+}

@@ -10,7 +10,7 @@ interface UIState {
   marqueeStart: { x: number; z: number } | null;
   marqueeEnd: { x: number; z: number } | null;
   toolDefaults: {
-    wall: { thickness: number; height: number; levelId: string; layer: string };
+    wall: { thickness: number; height: number; levelId: string; layer: string; justification: 'center' | 'left' | 'right' };
     area: { name: string; type: string; layer: string };
     door: { width: number; height: number; sillHeight: number; hingeSide: 'left' | 'right'; openDirection: 'inward' | 'outward'; swingAngle: number };
     window: { width: number; height: number; sillHeight: number; hingeSide: 'left' | 'right'; openDirection: 'inward' | 'outward'; swingAngle: number };
@@ -39,7 +39,7 @@ interface UIState {
   showOpeningLabels: boolean;
   showGrid2D: boolean;
   activeGuides: { type: 'horizontal' | 'vertical', pos: number }[];
-  activeSnapPoint: { x: number; y: number; type: string; label?: string; priority?: number } | null;
+  activeSnapPoint: { x: number; y: number; type: string; label?: string; priority?: number; wallThickness?: number; wallJustification?: 'center' | 'left' | 'right' } | null;
   
   setThemeMode: (mode: 'light' | 'dark') => void;
   toggleThemeMode: () => void;
@@ -50,7 +50,7 @@ interface UIState {
   setToolDefaults: (tool: 'wall' | 'area' | 'door' | 'window' | 'measure', defaults: any) => void;
   setValidationIssues: (issues: IValidationIssue[]) => void;
   setActiveGuides: (guides: { type: 'horizontal' | 'vertical', pos: number }[]) => void;
-  setActiveSnapPoint: (point: { x: number; y: number; type: string; label?: string; priority?: number } | null) => void;
+  setActiveSnapPoint: (point: { x: number; y: number; type: string; label?: string; priority?: number; wallThickness?: number; wallJustification?: 'center' | 'left' | 'right' } | null) => void;
   setDraftingToggle: (key: 'showGrid2D' | 'snapToGrid' | 'creationSnapToGrid' | 'snapToPoints' | 'orthoMode' | 'showAlignmentGuides', val: boolean) => void;
   setViewMode: (mode: '2d' | '3d' | 'split') => void;
   setCameraMode: (mode: 'perspective' | 'top') => void;
@@ -76,7 +76,7 @@ export const useUIStore = create<UIState>((set) => ({
   marqueeStart: null,
   marqueeEnd: null,
   toolDefaults: {
-    wall: { thickness: 0.2, height: 3.6, levelId: 'level_1', layer: 'walls' },
+    wall: { thickness: 0.2, height: 3.6, levelId: 'level_1', layer: 'walls', justification: 'center' },
     area: { name: '', type: 'custom_area', layer: 'areas' },
     door: { width: 0.9, height: 2.2, sillHeight: 0, hingeSide: 'left', openDirection: 'inward', swingAngle: 90 },
     window: { width: 1.4, height: 1.2, sillHeight: 0.9, hingeSide: 'left', openDirection: 'inward', swingAngle: 0 },

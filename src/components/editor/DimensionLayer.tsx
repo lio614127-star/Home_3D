@@ -13,6 +13,7 @@ interface Props {
   areas?: IArea[];
   building?: IBuilding;
   scale: number;
+  zoom?: number;
 }
 
 interface DimensionProps {
@@ -29,9 +30,10 @@ interface DimensionProps {
   onOffsetChange?: (newOffset: number) => void;
   onOffsetChange?: (newOffset: number) => void;
   onPointChange?: (point: 'start' | 'end' | 'end_drag', newPos: { x: number; y: number }, absScale: number, altKey?: boolean, shiftKey?: boolean) => void;
+  zoom?: number;
 }
 
-const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, scale, color = "#555", isManual, isSelected, onClick, onOffsetChange, onPointChange, onDragEnd }) => {
+const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, scale, color = "#555", isManual, isSelected, onClick, onOffsetChange, onPointChange, zoom = 1 }) => {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const len = Math.sqrt(dx * dx + dy * dy);
@@ -169,7 +171,7 @@ const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, 
       {isManual && isSelected && (
         <Group listening={true}>
           <Circle
-            x={p1x} y={p1y} radius={5} fill="#fff" stroke="#1976d2" strokeWidth={1.5} draggable
+            x={p1x} y={p1y} radius={5 / zoom} fill="#fff" stroke="#1976d2" strokeWidth={1.5 / zoom} draggable
             onDragStart={(e: any) => {
               e.cancelBubble = true;
               useProjectStore.getState().commitHistory();
@@ -203,7 +205,7 @@ const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, 
             }}
           />
           <Circle
-            x={p2x} y={p2y} radius={5} fill="#fff" stroke="#1976d2" strokeWidth={1.5} draggable
+            x={p2x} y={p2y} radius={5 / zoom} fill="#fff" stroke="#1976d2" strokeWidth={1.5 / zoom} draggable
             onDragStart={(e: any) => {
               e.cancelBubble = true;
               useProjectStore.getState().commitHistory();
@@ -242,7 +244,7 @@ const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist, text, 
   );
 };
 
-export const DimensionLayer: React.FC<Props> = ({ walls, areas, building, scale }) => {
+export const DimensionLayer: React.FC<Props> = ({ walls, areas, building, scale, zoom = 1 }) => {
   const { showManualDimensions, selectedObjectId, setSelectedObject, mode, snapToGrid, snapToPoints, gridMinorStep, snapTolerancePx, showAlignmentGuides, setActiveGuides, setActiveSnapPoint } = useUIStore();
   const annotations = useProjectStore(state => state.data.annotations || []);
   const theme = useTheme();
@@ -266,6 +268,7 @@ export const DimensionLayer: React.FC<Props> = ({ walls, areas, building, scale 
             offsetDist={dim.offsetDistance || 1}
             text={formatMeters(len)}
             scale={scale}
+            zoom={zoom}
             color={theme.dimensionStroke}
             isManual={true}
             isSelected={selectedObjectId === dim.id || useUIStore.getState().selectedItems.some(it => it.kind === 'dimension' && it.annotationId === dim.id)}

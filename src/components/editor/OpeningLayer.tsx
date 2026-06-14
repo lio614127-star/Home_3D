@@ -10,9 +10,10 @@ interface Props {
   openings: IOpening[];
   walls: IWall[];
   scale: number;
+  zoom?: number;
 }
 
-export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale }) => {
+export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale, zoom = 1 }) => {
   const { selectedObjectId, setSelectedObject, mode, showOpeningLabels } = useUIStore();
   const updateOpening = useProjectStore(state => state.updateOpening);
   const { t } = useI18nStore();
@@ -174,8 +175,8 @@ export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale }) => {
             )}
 
             {/* End Markers */}
-            <Circle x={-(opening.width * scale) / 2} y={0} radius={isSelected ? 4 : 2} fill="#fff" stroke={color} strokeWidth={1} listening={false} />
-            <Circle x={(opening.width * scale) / 2} y={0} radius={isSelected ? 4 : 2} fill="#fff" stroke={color} strokeWidth={1} listening={false} />
+            <Circle x={-(opening.width * scale) / 2} y={0} radius={isSelected ? 4 / zoom : 2 / zoom} fill="#fff" stroke={color} strokeWidth={1 / zoom} listening={false} />
+            <Circle x={(opening.width * scale) / 2} y={0} radius={isSelected ? 4 / zoom : 2 / zoom} fill="#fff" stroke={color} strokeWidth={1 / zoom} listening={false} />
 
             {/* Swing Arc for Door */}
             {isDoor && (

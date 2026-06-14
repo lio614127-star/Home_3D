@@ -1,8 +1,9 @@
 import React from 'react';
-import { Rect, Text, Group } from 'react-konva';
+import { Rect, Text, Group, Line } from 'react-konva';
 import { ISite } from '../../types';
-import { projectToCanvas, formatArea } from '../../core/geometry/math';
+import { projectToCanvas, formatArea, subtractOverlappingWalls } from '../../core/geometry/math';
 import { useUIStore } from '../../store/useUIStore';
+import { useProjectStore } from '../../store/useProjectStore';
 import { useI18nStore } from '../../store/useI18nStore';
 
 import { useTheme } from '../../theme/tokens';
@@ -10,13 +11,16 @@ import { useTheme } from '../../theme/tokens';
 interface Props {
   site: ISite;
   scale: number;
+  zoom?: number;
 }
 
-export const SiteLayer: React.FC<Props> = ({ site, scale }) => {
+export const SiteLayer: React.FC<Props> = ({ site, scale, zoom = 1 }) => {
   const { selectedObjectId, setSelectedObject, mode, showAreaName, showAreaArea } = useUIStore();
   const { t } = useI18nStore();
   const theme = useTheme();
   
+  const projectData = useProjectStore(state => state.data);
+
   if (!site.visible) return null;
 
   const pos = projectToCanvas(site.origin.x, site.origin.z);
@@ -41,74 +45,6 @@ export const SiteLayer: React.FC<Props> = ({ site, scale }) => {
           setSelectedObject(site.id, 'site');
         }
       }}
-      draggable={mode === 'select' && isSelected}
-      onDragStart={(e) => {
-        e.cancelBubble = true;
-        const uiState = useUIStore.getState();
-        const projStore = useProjectStore.getState();
-        
-        if (!uiState.selectedItems.some(it => it.kind === 'site')) {
-           uiState.setSelectedItems([{ kind: 'site' }]);
-           uiState.setSelectedObject(site.id, 'site');
-        }
-        
-        projStore.startGroupDrag();
-        
-        const stage = e.target.getStage();
-        const pos = stage?.getPointerPosition();
-        if (!pos) return;
-        const transform = e.target.getParent()?.getAbsoluteTransform().copy().invert();
-        if (transform) {
-          const proj = transform.point(pos);
-          e.target.setAttr('dragStartProj', proj);
-        }
-      }}
-      onDragMove={(e) => {
-        e.cancelBubble = true;
-        const stage = e.target.getStage();
-        const pos = stage?.getPointerPosition();
-        if (!pos) return;
-        
-        const transform = e.target.getParent()?.getAbsoluteTransform().copy().invert();
-        if (!transform) return;
-        
-        const proj = transform.point(pos);
-        const startProj = e.target.getAttr('dragStartProj');
-        if (!startProj) return;
-
-        const rawDeltaX = (proj.x - startProj.x) / scale;
-        const rawDeltaZ = (proj.y - startProj.y) / scale;
-
-        let adjustedDeltaX = rawDeltaX;
-        let adjustedDeltaZ = rawDeltaZ;
-        
-        const projStore = useProjectStore.getState();
-        const { snapToGrid, gridMinorStep } = useUIStore.getState();
-        
-        if (snapToGrid && !e.evt.altKey) {
-           const snapshotOrigin = projStore.groupDragSnapshot?.site?.origin;
-           if (snapshotOrigin) {
-             // Snap absolute position
-             const snappedX = Math.round((snapshotOrigin.x + rawDeltaX) / gridMinorStep) * gridMinorStep;
-             const snappedZ = Math.round((snapshotOrigin.z + rawDeltaZ) / gridMinorStep) * gridMinorStep;
-             adjustedDeltaX = snappedX - snapshotOrigin.x;
-             adjustedDeltaZ = snappedZ - snapshotOrigin.z;
-           } else {
-             adjustedDeltaX = Math.round(adjustedDeltaX / gridMinorStep) * gridMinorStep;
-             adjustedDeltaZ = Math.round(adjustedDeltaZ / gridMinorStep) * gridMinorStep;
-           }
-        }
-
-        projStore.updateGroupDrag(adjustedDeltaX, adjustedDeltaZ, useUIStore.getState().selectedItems);
-        // CRITICAL: reset Konva node position so React state takes full control
-        e.target.position({ x: 0, y: 0 });
-      }}
-      onDragEnd={(e) => {
-        e.cancelBubble = true;
-        useProjectStore.getState().endGroupDrag(true);
-        e.target.setAttr('dragStartProj', null);
-        e.target.position({ x: 0, y: 0 });
-      }}
     >
       <Rect
         x={pos.x * scale}
@@ -116,33 +52,54 @@ export const SiteLayer: React.FC<Props> = ({ site, scale }) => {
         width={site.width * scale}
         height={site.depth * scale}
         fill={theme.siteFill}
-        stroke={isSelected ? theme.selectionStroke : theme.siteStroke}
-        strokeWidth={isSelected ? 4 : 2}
-        dash={isSelected ? [] : [10, 5]}
+        strokeEnabled={false}
       />
+      
+      {/* Subtracted Borders */}
+      {(() => {
+         const p1 = { x: site.origin.x, z: site.origin.z };
+         const p2 = { x: site.origin.x + site.width, z: site.origin.z };
+         const p3 = { x: site.origin.x + site.width, z: site.origin.z + site.depth };
+         const p4 = { x: site.origin.x, z: site.origin.z + site.depth };
+         const edges = [[p1, p2], [p2, p3], [p3, p4], [p4, p1]];
+         return edges.map((edge, i) => {
+           const visibleSegments = subtractOverlappingWalls(edge[0], edge[1], projectData.walls);
+           return visibleSegments.map((seg, segIdx) => (
+             <Line
+               key={`site-edge-${i}-${segIdx}`}
+               points={[seg.start.x * scale, seg.start.z * scale, seg.end.x * scale, seg.end.z * scale]}
+               stroke={isSelected ? theme.selectionStroke : theme.siteStroke}
+               strokeWidth={isSelected ? 4 : 2}
+               dash={isSelected ? [] : [10, 5]}
+               listening={false}
+             />
+           ));
+         });
+      })()}
+
       <Group x={centerX} y={centerY} listening={false}>
         {showAreaName && (
           <Text 
             x={-site.width * scale / 2} 
-            y={showAreaArea ? -12 : -7} 
+            y={showAreaArea ? -12 / zoom : -7 / zoom} 
             width={site.width * scale}
             text={t("canvas.siteLabel")} 
-            fontSize={16} 
+            fontSize={16 / zoom} 
             fontStyle="bold"
             align="center"
-            fill="#00695c"
+            fill={theme.textSecondary}
             listening={false}
           />
         )}
         {showAreaArea && (
           <Text 
             x={-site.width * scale / 2} 
-            y={showAreaName ? 8 : -6} 
+            y={showAreaName ? 8 / zoom : -6 / zoom} 
             width={site.width * scale}
             text={formatArea(siteArea)} 
-            fontSize={13} 
+            fontSize={13 / zoom} 
             align="center"
-            fill="#004d40"
+            fill={theme.textSecondary}
             listening={false}
           />
         )}

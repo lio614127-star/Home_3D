@@ -21,13 +21,27 @@ export const AreaFloor3D: React.FC<{ area: IArea, baseHeight: number }> = ({ are
 
   if (!area.visible || !shape) return null;
 
-  const cy = baseHeight + 0.01;
   const isSelected = selectedObjectId === area.id;
+  const color = isSelected ? theme.selected3DColor : (theme.room3DFill.startsWith('rgba') ? '#cccccc' : theme.room3DFill);
+
+  if (!area.elevation || area.elevation <= 0) {
+    // Just a flat zone, render slightly above baseHeight to prevent z-fighting
+    return (
+      <mesh position={[0, baseHeight + 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <shapeGeometry args={[shape]} />
+        <meshStandardMaterial color={color} roughness={0.7} transparent opacity={0.6} depthWrite={false} />
+      </mesh>
+    );
+  }
+
+  // Extrude from baseHeight to baseHeight + elevation
+  const thickness = area.elevation;
+  const cy = baseHeight;
 
   return (
     <mesh position={[0, cy, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-      <shapeGeometry args={[shape]} />
-      <meshStandardMaterial color={isSelected ? theme.selected3DColor : theme.room3DFill} transparent opacity={0.5} roughness={0.7} side={2} />
+      <extrudeGeometry args={[shape, { depth: thickness, bevelEnabled: false }]} />
+      <meshStandardMaterial color={color} roughness={0.7} />
     </mesh>
   );
 };

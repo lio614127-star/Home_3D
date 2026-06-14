@@ -3,9 +3,11 @@ import { Canvas2D } from './components/editor/Canvas2D';
 import { Toolbar } from './components/ui/Toolbar';
 import { PropertiesPanel } from './components/ui/PropertiesPanel';
 import { ValidationPanel } from './components/ui/ValidationPanel';
+import { SavedProjectsPanel } from './components/ui/SavedProjectsPanel';
 import { useI18nStore } from './store/useI18nStore';
 import { useProjectStore } from './store/useProjectStore';
 import { useUIStore } from './store/useUIStore';
+import { useSavedProjectsStore } from './store/useSavedProjectsStore';
 import { ProjectValidator } from './core/validator/ProjectValidator';
 import { Scene3D } from './components/scene3d/Scene3D';
 import { useTheme } from './theme/tokens';
@@ -20,6 +22,23 @@ function App() {
   const deleteOpening = useProjectStore(state => state.deleteOpening);
 
   const theme = useTheme();
+
+  // Sync with SavedProjectsStore
+  useEffect(() => {
+    const unsub = useProjectStore.subscribe((state) => {
+      useSavedProjectsStore.getState().saveCurrentProject(state.data);
+    });
+    
+    const savedStore = useSavedProjectsStore.getState();
+    if (savedStore.projects.length === 0) {
+      savedStore.saveCurrentProject(useProjectStore.getState().data);
+    } else if (!savedStore.currentProjectId) {
+      savedStore.switchProject(savedStore.projects[0].id);
+      useProjectStore.getState().setProject(savedStore.projects[0].data);
+    }
+
+    return unsub;
+  }, []);
 
   // Realtime validation effect
   useEffect(() => {
@@ -101,6 +120,13 @@ function App() {
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
             <ValidationPanel />
+          </div>
+          
+          <div style={{ padding: '10px', background: theme.toolbarBg, borderTop: `1px solid ${theme.panelBorder}`, borderBottom: `1px solid ${theme.panelBorder}` }}>
+            <h3 style={{ margin: 0, color: theme.textPrimary }}>Dự án đã lưu</h3>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <SavedProjectsPanel />
           </div>
         </aside>
       </div>

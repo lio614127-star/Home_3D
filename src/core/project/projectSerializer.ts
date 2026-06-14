@@ -47,6 +47,19 @@ export const projectSerializer = {
         parsed.version = "1.1.0"; // Upgrade version
       }
 
+      // Repair site object for old saves
+      if (!parsed.site) {
+        parsed.site = { id: "site_1", width: 21, depth: 54, frontDirection: "Tây Bắc", origin: { x: 0, y: 0, z: 0 }, layer: "site", visible: true, locked: true };
+      }
+      if (typeof parsed.site.width !== 'number' || isNaN(parsed.site.width) || parsed.site.width <= 0) {
+        parsed.site.width = 21;
+      }
+      if (typeof parsed.site.depth !== 'number' || isNaN(parsed.site.depth) || parsed.site.depth <= 0) {
+        parsed.site.depth = 54;
+      }
+      // Force visible for older files so they regain the site color
+      parsed.site.visible = true;
+
       const validation = ProjectValidator.validate(parsed);
       
       if (!validation.isValid) {

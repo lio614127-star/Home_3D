@@ -1,4 +1,5 @@
-import { IProject, IWall } from '../../types';
+import { IProject } from '../../types';
+import { getWallCenterline, getWallRenderLine, lineIntersection, getWallPolygon } from './math';
 import { WORKSPACE_MIN_X, WORKSPACE_MAX_X, WORKSPACE_MIN_Z, WORKSPACE_MAX_Z } from '../config/workspace';
 
 export interface SnapCandidate {
@@ -7,6 +8,9 @@ export interface SnapCandidate {
   type: 'siteCorner' | 'areaVertex' | 'wallEndpoint' | 'wallFace' | 'wallCenter' | 'areaEdge' | 'grid' | 'ortho';
   label: string;
   priority: number; // 1 = highest (corners), 2 = edges/faces, 3 = grid fallback
+  wallId?: string;
+  wallThickness?: number;
+  wallJustification?: 'center' | 'left' | 'right';
 }
 
 export interface SnapResult {
@@ -17,10 +21,26 @@ export interface SnapResult {
   label?: string;
   priority?: number;
   guides?: { type: 'horizontal' | 'vertical', pos: number }[];
+  wallThickness?: number;
+  wallJustification?: 'center' | 'left' | 'right';
 }
 
 export function roundToStep(value: number, step: number): number {
   return Math.round(value / step) * step;
+}
+
+function segmentIntersection(p1: {x: number, z: number}, p2: {x: number, z: number}, p3: {x: number, z: number}, p4: {x: number, z: number}) {
+  const denom = (p4.z - p3.z) * (p2.x - p1.x) - (p4.x - p3.x) * (p2.z - p1.z);
+  if (Math.abs(denom) < 0.0001) return null;
+  const ua = ((p4.x - p3.x) * (p1.z - p3.z) - (p4.z - p3.z) * (p1.x - p3.x)) / denom;
+  const ub = ((p2.x - p1.x) * (p1.z - p3.z) - (p2.z - p1.z) * (p1.x - p3.x)) / denom;
+  if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+    return {
+      x: p1.x + ua * (p2.x - p1.x),
+      z: p1.z + ua * (p2.z - p1.z)
+    };
+  }
+  return null;
 }
 
 export function roundToDecimals(value: number, decimals: number): number {
@@ -28,10 +48,10 @@ export function roundToDecimals(value: number, decimals: number): number {
 }
 
 // Tolerance constants in screen pixels
-const VERTEX_TOLERANCE_PX = 18;
+const VERTEX_TOLERANCE_PX = 30; // Increased to make corners much stickier when closing loops
 const EDGE_TOLERANCE_PX = 10;
 
-export function getUnifiedSnapCandidates(pointerX: number, pointerZ: number, project: IProject, measureMode?: string): SnapCandidate[] {
+export function getUnifiedSnapCandidates(pointerX: number, pointerZ: number, project: IProject, measureMode?: string, gridOpts?: { snapToGrid: boolean, gridMinorStep: number }): SnapCandidate[] {
   const candidates: SnapCandidate[] = [];
 
   // 1. Site Corners
@@ -71,15 +91,14 @@ export function getUnifiedSnapCandidates(pointerX: number, pointerZ: number, pro
     });
   }
 
-  // 3. Walls (Endpoints, Faces, Centerline)
+  // 3. Walls (Endpoints, Faces, Centerline, Corners)
   project.walls.forEach(wall => {
-    // Endpoints
-    candidates.push({ x: wall.start.x, z: wall.start.z, type: 'wallEndpoint', label: 'Đầu tường', priority: 1 });
-    candidates.push({ x: wall.end.x, z: wall.end.z, type: 'wallEndpoint', label: 'Đầu tường', priority: 1 });
-
-    // Edge/Faces projections
-    const dx = wall.end.x - wall.start.x;
-    const dz = wall.end.z - wall.start.z;
+    // Use the render line to account for miter joints
+    const { start, end } = getWallRenderLine(wall, project.walls);
+    
+    // Edge/Faces projections and Corners
+    const dx = end.x - start.x;
+    const dz = end.z - start.z;
     const len = Math.sqrt(dx * dx + dz * dz);
     if (len > 0) {
       const nx = -dz / len;
@@ -87,28 +106,120 @@ export function getUnifiedSnapCandidates(pointerX: number, pointerZ: number, pro
       const lx = dx / len;
       const lz = dz / len;
       
-      const vx = pointerX - wall.start.x;
-      const vz = pointerZ - wall.start.z;
-      const t = Math.max(0, Math.min(len, vx * lx + vz * lz));
-      const px = wall.start.x + lx * t;
-      const pz = wall.start.z + lz * t;
+      const t2 = (wall.thickness || 0.2) / 2;
 
-      if (!measureMode || measureMode === 'centerline' || measureMode === 'thickness') {
-        candidates.push({ x: px, z: pz, type: 'wallCenter', label: 'Tim tường', priority: 2 });
+      const eps = 0.05;
+      const isSamePoint = (p1: {x: number, z: number}, p2: {x: number, z: number}) => Math.abs(p1.x - p2.x) < eps && Math.abs(p1.z - p2.z) < eps;
+
+      // Centerline endpoints (topological connections) - MUST be pushed FIRST so they win ties over visual corners!
+      candidates.push({ x: wall.start.x, z: wall.start.z, type: 'wallCenter', label: 'Điểm nối tường', priority: 1, wallId: wall.id, wallThickness: wall.thickness, wallJustification: wall.justification });
+      candidates.push({ x: wall.end.x, z: wall.end.z, type: 'wallCenter', label: 'Điểm nối tường', priority: 1, wallId: wall.id, wallThickness: wall.thickness, wallJustification: wall.justification });
+
+      const poly = getWallPolygon(wall, project.walls);
+      if (poly) {
+        // Dedup points to avoid double pushing
+        const pts = [poly.pLeftStart, poly.pRightStart, poly.pLeftEnd, poly.pRightEnd];
+        pts.forEach(p => {
+          candidates.push({ x: p.x, z: p.z, type: 'wallEndpoint', label: 'Góc mép tường', priority: 1 });
+        });
+      } else {
+        const t2 = (wall.thickness || 0.2) / 2;
+        const pushCornersForEndpoint = (isStart: boolean) => {
+          const pt = isStart ? start : end;
+          const pLeft = { x: pt.x + nx * t2, z: pt.z + nz * t2 };
+          const pRight = { x: pt.x - nx * t2, z: pt.z - nz * t2 };
+          candidates.push({ x: pLeft.x, z: pLeft.z, type: 'wallEndpoint', label: 'Góc mép tường', priority: 1 });
+          candidates.push({ x: pRight.x, z: pRight.z, type: 'wallEndpoint', label: 'Góc mép tường', priority: 1 });
+        };
+        pushCornersForEndpoint(true);
+        pushCornersForEndpoint(false);
       }
+
+      const vx = pointerX - start.x;
+      const vz = pointerZ - start.z;
+      let t = Math.max(0, Math.min(len, vx * lx + vz * lz));
+      let px = start.x + lx * t;
+      let pz = start.z + lz * t;
       
-      if (!measureMode || measureMode === 'innerFace' || measureMode === 'thickness') {
-        const hx = px + nx * (wall.thickness / 2);
-        const hz = pz + nz * (wall.thickness / 2);
-        candidates.push({ x: hx, z: hz, type: 'wallFace', label: 'Mép tường', priority: 2 });
+      // Snap along the line if it's axis-aligned and grid snap is enabled
+      if (gridOpts?.snapToGrid && gridOpts.gridMinorStep) {
+        const step = gridOpts.gridMinorStep;
+        if (Math.abs(lz) < 0.001) { // Horizontal
+           px = Math.round(px / step) * step;
+           px = Math.max(Math.min(px, Math.max(start.x, end.x)), Math.min(start.x, end.x));
+        } else if (Math.abs(lx) < 0.001) { // Vertical
+           pz = Math.round(pz / step) * step;
+           pz = Math.max(Math.min(pz, Math.max(start.z, end.z)), Math.min(start.z, end.z));
+        }
       }
+
+      // Always emit candidates for measurement/snapping
+      candidates.push({ x: px, z: pz, type: 'wallCenter', label: 'Tim tường', priority: 2 });
       
-      if (!measureMode || measureMode === 'outerFace' || measureMode === 'thickness') {
-        const hx = px - nx * (wall.thickness / 2);
-        const hz = pz - nz * (wall.thickness / 2);
-        candidates.push({ x: hx, z: hz, type: 'wallFace', label: 'Mép tường', priority: 2 });
+      const hx1 = px + nx * (wall.thickness / 2);
+      const hz1 = pz + nz * (wall.thickness / 2);
+      candidates.push({ x: hx1, z: hz1, type: 'wallFace', label: 'Mép tường', priority: 2 });
+      
+      const hx2 = px - nx * (wall.thickness / 2);
+      const hz2 = pz - nz * (wall.thickness / 2);
+      candidates.push({ x: hx2, z: hz2, type: 'wallFace', label: 'Mép tường', priority: 2 });
+    }
+  });
+
+  // Calculate visual intersections between all wall edges to handle unconnected walls forming visual corners
+  const allPolys = project.walls.filter(w => w.visible).map(w => getWallPolygon(w, project.walls)).filter(p => p !== null) as any[];
+  for (let i = 0; i < allPolys.length; i++) {
+    for (let j = i + 1; j < allPolys.length; j++) {
+      const p1 = allPolys[i];
+      const p2 = allPolys[j];
+      
+      const edges1 = [
+        { s: p1.pLeftStart, e: p1.pLeftEnd },
+        { s: p1.pRightStart, e: p1.pRightEnd },
+        { s: p1.pLeftStart, e: p1.pRightStart },
+        { s: p1.pLeftEnd, e: p1.pRightEnd }
+      ];
+      const edges2 = [
+        { s: p2.pLeftStart, e: p2.pLeftEnd },
+        { s: p2.pRightStart, e: p2.pRightEnd },
+        { s: p2.pLeftStart, e: p2.pRightStart },
+        { s: p2.pLeftEnd, e: p2.pRightEnd }
+      ];
+      
+      for (const e1 of edges1) {
+        for (const e2 of edges2) {
+          const int = segmentIntersection(e1.s, e1.e, e2.s, e2.e);
+          if (int) {
+            candidates.push({ x: int.x, z: int.z, type: 'wallEndpoint', label: 'Góc mép tường', priority: 1 });
+          }
+        }
       }
     }
+  }
+
+  // Areas
+  project.areas.forEach(area => {
+    area.points.forEach((pt, i) => {
+      const nextPt = area.points[(i + 1) % area.points.length];
+      
+      // Vertex candidate
+      candidates.push({ x: pt.x, z: pt.z, type: 'areaVertex', label: 'Góc khu vực', priority: 1 });
+      
+      // Edge candidate
+      const dx = nextPt.x - pt.x;
+      const dz = nextPt.z - pt.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len > 0) {
+        const lx = dx / len;
+        const lz = dz / len;
+        const vx = pointerX - pt.x;
+        const vz = pointerZ - pt.z;
+        const t = Math.max(0, Math.min(len, vx * lx + vz * lz));
+        const px = pt.x + lx * t;
+        const pz = pt.z + lz * t;
+        candidates.push({ x: px, z: pz, type: 'areaEdge', label: 'Cạnh khu vực', priority: 2 });
+      }
+    });
   });
 
   return candidates;
@@ -155,7 +266,7 @@ export function resolveBestSnap(
   let finalPriority: number = 99;
 
   if (opts.snapToPoints) {
-    const candidates = getUnifiedSnapCandidates(pointerX, pointerZ, project, opts.measureMode);
+    const candidates = getUnifiedSnapCandidates(pointerX, pointerZ, project, opts.measureMode, { snapToGrid: opts.snapToGrid, gridMinorStep: opts.gridMinorStep });
     
     // Evaluate candidates with strict priority logic
     for (const c of candidates) {
@@ -259,6 +370,8 @@ export function resolveBestSnap(
     type: finalType,
     label: finalLabel,
     priority: finalPriority,
-    guides
+    guides,
+    wallThickness: bestCandidate?.wallThickness,
+    wallJustification: bestCandidate?.wallJustification
   };
 }

@@ -15,7 +15,7 @@ export const createDefaultProject = (): IProject => {
       frontDirection: "Tây Bắc",
       origin: { x: 0, y: 0, z: 0 },
       layer: "site",
-      visible: false,
+      visible: true,
       locked: true
     },
     building: {

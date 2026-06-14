@@ -30,7 +30,15 @@ export const ValidationPanel: React.FC = () => {
       <h4 style={{ marginTop: 0 }}>{t("validation.title")} ({issues.length})</h4>
       <ul style={{ paddingLeft: '20px', margin: 0, fontSize: '13px' }}>
         {issues.map((issue, idx) => (
-          <li key={idx} style={{ color: issue.severity === 'fatal' ? theme.danger : '#f57c00', marginBottom: '5px' }}>
+          <li 
+            key={idx} 
+            style={{ color: issue.severity === 'fatal' ? theme.danger : '#f57c00', marginBottom: '5px', cursor: 'pointer' }}
+            onClick={() => {
+              if (issue.objectId && issue.objectType) {
+                useUIStore.getState().setSelectedObject(issue.objectId, issue.objectType as any);
+              }
+            }}
+          >
             <strong>[{issue.severity === 'fatal' ? t('validation.fatalErrors') : t('validation.warnings')}]</strong> {renderMessage(issue.message)} 
             <br/>
             <span style={{ fontSize: '11px', color: theme.textSecondary }}>({t(`object.${issue.objectType}`)} - {issue.objectId})</span>

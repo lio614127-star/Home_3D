@@ -1,7 +1,7 @@
 import React from 'react';
 import { useUIStore } from '../../store/useUIStore';
 import { useProjectStore } from '../../store/useProjectStore';
-import { getWallLength, getWallEndFromLength, getPolygonArea, normalizeCoord } from '../../core/geometry/math';
+import { getWallLength, getWallEndFromLength, getPolygonArea, getAreaNetSize, normalizeCoord } from '../../core/geometry/math';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useTheme } from '../../theme/tokens';
 
@@ -41,6 +41,16 @@ export const PropertiesPanel: React.FC = () => {
             <label style={{ display: 'flex', justifyContent: 'space-between' }}>
               Chiều cao (m): 
               <input type="number" step="0.1" value={toolDefaults.wall.height} onChange={e => setToolDefaults('wall', { height: normalizeCoord(parseFloat(e.target.value) || 2.0) })} style={{ width: '60px' }} />
+            </label>
+          </div>
+          <div style={{ marginBottom: '10px' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              Căn lề tường (Tham chiếu):
+              <select value={toolDefaults.wall.justification || 'center'} onChange={e => setToolDefaults('wall', { justification: e.target.value })} style={{ width: '100%', padding: '4px' }}>
+                <option value="center">Giữa (Tim tường)</option>
+                <option value="left">Mép trong (Lọt lòng)</option>
+                <option value="right">Mép ngoài (Phủ bì)</option>
+              </select>
             </label>
           </div>
         </div>
@@ -251,6 +261,14 @@ export const PropertiesPanel: React.FC = () => {
           <input type="number" value={wall.height} onChange={e => updateWall(wall.id, { height: parseFloat(e.target.value) || 0 })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
         </div>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Căn lề</label>
+          <select value={wall.justification || 'center'} onChange={e => updateWall(wall.id, { justification: e.target.value as any })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }}>
+            <option value="center">Giữa (Tim tường)</option>
+            <option value="left">Mép trong (Lọt lòng)</option>
+            <option value="right">Mép ngoài (Phủ bì)</option>
+          </select>
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.length")}</label>
           <input type="number" value={length.toFixed(2)} onChange={handleLengthChange} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px', fontWeight: 'bold' }} />
         </div>
@@ -262,7 +280,7 @@ export const PropertiesPanel: React.FC = () => {
     const area = project.areas.find(r => r.id === selectedObjectId);
     if (!area) return null;
     
-    const areaValue = getPolygonArea(area.points);
+    const areaValue = getAreaNetSize(area, project.walls);
 
     return (
       <div style={{ padding: '15px', fontSize: '13px', boxSizing: 'border-box', width: '100%', color: theme.textPrimary }}>
@@ -275,6 +293,10 @@ export const PropertiesPanel: React.FC = () => {
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.areaType")}</label>
           <input type="text" value={area.type || ''} onChange={e => updateArea(area.id, { type: e.target.value })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Độ cao nền (m)</label>
+          <input type="number" step="0.01" value={area.elevation || 0} onChange={e => updateArea(area.id, { elevation: Math.max(0, parseFloat(e.target.value) || 0) })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
         </div>
         <div style={{ marginTop: '15px' }}>
           <p><strong>{t("field.area")}:</strong> {areaValue.toFixed(2)} m²</p>

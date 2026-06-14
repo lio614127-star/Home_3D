@@ -1,4 +1,5 @@
 import React, { Suspense } from 'react';
+import { isPointInPolygon } from '../../core/geometry/math';
 import { WORKSPACE_WIDTH, WORKSPACE_DEPTH } from '../../core/config/workspace';
 import { Canvas } from '@react-three/fiber';
 import { useProjectStore } from '../../store/useProjectStore';
@@ -44,10 +45,10 @@ const RectangularGrid3D: React.FC<{ width: number; depth: number }> = ({ width, 
   return (
     <group position={[0, 0.01, 0]}>
       <lineSegments geometry={majorGeo}>
-        <lineBasicMaterial color={theme.scene3dGridMajor} />
+        <lineBasicMaterial color={theme.textPrimary} transparent opacity={0.25} depthWrite={false} />
       </lineSegments>
       <lineSegments geometry={minorGeo}>
-        <lineBasicMaterial color={theme.scene3dGridMinor} />
+        <lineBasicMaterial color={theme.textPrimary} transparent opacity={0.08} depthWrite={false} />
       </lineSegments>
     </group>
   );
@@ -60,6 +61,7 @@ export const Scene3D: React.FC = () => {
   const cx = project.site.width / 2 || 0;
   const cz = project.site.depth / 2 || 0;
   const theme = useTheme();
+  const effectiveBaseHeight = project.building.visible ? project.building.floorHeight : 0;
 
   return (
     <div style={{ width: '100%', height: '100%', background: theme.scene3dBg }}>
@@ -87,17 +89,34 @@ export const Scene3D: React.FC = () => {
           
           {show3DWalls && project.walls.map(wall => {
             const wallOpenings = (project.openings || []).filter(o => o.wallId === wall.id);
-            return <Wall3D key={wall.id} wall={wall} baseHeight={project.building.floorHeight} openings={wallOpenings} />;
+            // Determine if wall is inside an area with elevation
+            let wallBaseHeight = effectiveBaseHeight;
+            const midX = (wall.start.x + wall.end.x) / 2;
+            const midZ = (wall.start.z + wall.end.z) / 2;
+            project.areas.forEach(area => {
+              if (area.elevation && area.elevation > 0 && isPointInPolygon({x: midX, z: midZ}, area.points)) {
+                wallBaseHeight = Math.max(wallBaseHeight, effectiveBaseHeight + area.elevation);
+              }
+            });
+            return <Wall3D key={wall.id} wall={wall} allWalls={project.walls} baseHeight={wallBaseHeight} openings={wallOpenings} />;
           })}
 
           {show3DRooms && project.areas.map(area => (
-          <AreaFloor3D key={area.id} area={area} baseHeight={project.building.floorHeight || 0.4} />
+          <AreaFloor3D key={area.id} area={area} baseHeight={effectiveBaseHeight} />
           ))}
 
           {show3DOpenings && (project.openings || []).map(opening => {
             const wall = project.walls.find(w => w.id === opening.wallId);
             if (!wall) return null;
-            return <OpeningPlaceholder3D key={opening.id} opening={opening} wall={wall} baseHeight={project.building.floorHeight} />;
+            let wallBaseHeight = effectiveBaseHeight;
+            const midX = (wall.start.x + wall.end.x) / 2;
+            const midZ = (wall.start.z + wall.end.z) / 2;
+            project.areas.forEach(area => {
+              if (area.elevation && area.elevation > 0 && isPointInPolygon({x: midX, z: midZ}, area.points)) {
+                wallBaseHeight = Math.max(wallBaseHeight, effectiveBaseHeight + area.elevation);
+              }
+            });
+            return <OpeningPlaceholder3D key={opening.id} opening={opening} wall={wall} baseHeight={wallBaseHeight} />;
           })}
         </Suspense>
       </Canvas>

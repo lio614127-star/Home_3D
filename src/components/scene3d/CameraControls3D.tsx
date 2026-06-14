@@ -67,41 +67,51 @@ export const CameraControls3D: React.FC<{ cx: number; cz: number }> = ({ cx, cz 
     controls.update();
   }, [cameraMode, camera]);
 
-  // Handle Safe Custom Zoom to Cursor
+
+  // Handle Spacebar to Pan
   useEffect(() => {
-    const controls = controlsRef.current;
-    if (!controls || cameraMode !== 'perspective') return;
-
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const targetVector = new THREE.Vector3();
-
-    const onWheel = (e: WheelEvent) => {
-      if ((e.target as HTMLElement)?.tagName !== 'CANVAS') return;
-
-      raycaster.setFromCamera(pointer, camera);
-      const intersect = raycaster.ray.intersectPlane(plane, targetVector);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       
-      if (intersect) {
-        // Clamp the point within expanded site bounds to prevent target jumping far away
-        const clampX = Math.max(-site.width * 0.1, Math.min(site.width * 1.1, intersect.x));
-        const clampZ = Math.max(-site.depth * 0.1, Math.min(site.depth * 1.1, intersect.z));
-        
-        const clampedPoint = new THREE.Vector3(clampX, 0, clampZ);
-        
-        // Lerp target towards the cursor point safely
-        const zoomIn = e.deltaY < 0;
-        const alpha = zoomIn ? 0.15 : 0.08;
-        
-        controls.target.lerp(clampedPoint, alpha);
-        controls.update();
+      if (e.code === 'Space' && controlsRef.current && cameraMode !== 'top') {
+        controlsRef.current.mouseButtons.LEFT = THREE.MOUSE.PAN;
+        gl.domElement.style.cursor = 'grab';
       }
     };
 
-    gl.domElement.addEventListener('wheel', onWheel, { passive: true });
-    return () => {
-      gl.domElement.removeEventListener('wheel', onWheel);
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && controlsRef.current && cameraMode !== 'top') {
+        controlsRef.current.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+        gl.domElement.style.cursor = 'default';
+      }
     };
-  }, [camera, gl, pointer, raycaster, cameraMode, site.width, site.depth]);
 
-  return <OrbitControls ref={controlsRef} enableDamping makeDefault enableZoom={true} enablePan={true} rotateSpeed={0.6} panSpeed={0.7} zoomSpeed={0.8} />;
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      if (controlsRef.current && cameraMode !== 'top') {
+        controlsRef.current.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+      }
+      gl.domElement.style.cursor = 'default';
+    };
+  }, [cameraMode, gl.domElement]);
+
+  return (
+    <OrbitControls 
+      ref={controlsRef} 
+      enableDamping 
+      makeDefault 
+      enableZoom={true} 
+      enablePan={true} 
+      rotateSpeed={0.6} 
+      panSpeed={0.7} 
+      zoomSpeed={0.8}
+      minPolarAngle={0}
+      maxPolarAngle={cameraMode === 'top' ? 0 : Math.PI / 2 - 0.01}
+    />
+  );
 };

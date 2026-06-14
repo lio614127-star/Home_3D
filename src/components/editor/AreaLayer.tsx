@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { Line, Group, Text, Circle } from 'react-konva';
 import { IArea } from '../../types';
-import { projectToCanvas, getPolygonArea, getPolygonCentroid, distanceToSegment, formatArea } from '../../core/geometry/math';
+import { projectToCanvas, getPolygonArea, getPolygonCentroid, distanceToSegment, formatArea, subtractOverlappingWalls, getAreaNetSize } from '../../core/geometry/math';
 import { resolveBestSnap } from '../../core/geometry/snap';
 import { useUIStore } from '../../store/useUIStore';
 import { useProjectStore } from '../../store/useProjectStore';
@@ -9,11 +9,11 @@ import { useTheme } from '../../theme/tokens';
 import { useI18nStore } from '../../store/useI18nStore';
 
 interface Props {
-  areas: IArea[];
   scale: number;
+  zoom?: number;
 }
 
-export const AreaLayer: React.FC<Props> = ({ areas, scale }) => {
+export const AreaLayer: React.FC<Props> = ({ areas, scale, zoom = 1 }) => {
   const { selectedObjectId, setSelectedObject, mode, snapToGrid, snapToPoints, gridMinorStep, snapTolerancePx, showAreaName, showAreaArea, showAlignmentGuides, setActiveGuides, setActiveSnapPoint } = useUIStore();
   const updateArea = useProjectStore(state => state.updateArea);
   const insertAreaPoint = useProjectStore(state => state.insertAreaPoint);
@@ -88,12 +88,12 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale }) => {
 
   return (
     <Group listening={isSelectMode}>
-      {areas.map(area => {
+      {areas.map((area, index) => {
         if (!area.visible) return null;
         
         const isSelected = selectedObjectId === area.id || useUIStore.getState().selectedItems.some(it => it.kind === 'area' && it.areaId === area.id);
         const flatPoints = area.points.flatMap(p => [p.x * scale, p.z * scale]);
-        const areaValue = getPolygonArea(area.points);
+        const areaValue = getAreaNetSize(area, projectData.walls);
         const centroid = getPolygonCentroid(area.points);
         const centroidCanvas = projectToCanvas(centroid.x, centroid.z);
 
@@ -118,79 +118,13 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale }) => {
                 e.evt.preventDefault();
               }
             }}
-            draggable={isSelectMode && isSelected && useUIStore.getState().selectedItems.length <= 1}
-            onDragStart={(e) => {
-              if (e.target.name() === 'vertex-handle') return;
-              e.cancelBubble = true;
-              
-              const uiState = useUIStore.getState();
-              const projStore = useProjectStore.getState();
-              
-              if (!uiState.selectedItems.some(it => it.kind === 'area' && it.areaId === area.id)) {
-                 uiState.setSelectedItems([{ kind: 'area', areaId: area.id }]);
-                 uiState.setSelectedObject(area.id, 'area');
-              }
-              
-              projStore.startGroupDrag();
-              
-              const stage = e.target.getStage();
-              const pos = stage.getPointerPosition();
-              if (!pos) return;
-              const transform = e.target.getParent().getAbsoluteTransform().copy().invert();
-              const proj = transform.point(pos);
-              e.target.setAttr('dragStartProj', proj);
-            }}
-            onDragMove={(e) => {
-              if (e.target.name() === 'vertex-handle') return;
-              e.cancelBubble = true;
-              const stage = e.target.getStage();
-              const pos = stage.getPointerPosition();
-              if (!pos) return;
-              
-              const transform = e.target.getParent().getAbsoluteTransform().copy().invert();
-              const proj = transform.point(pos);
-              
-              const startProj = e.target.getAttr('dragStartProj');
-              if (!startProj) return;
-              
-              const rawDeltaX = (proj.x - startProj.x) / scale;
-              const rawDeltaZ = (proj.y - startProj.y) / scale;
-              
-              const isShift = e.evt.shiftKey;
-              
-              let adjustedDeltaX = rawDeltaX;
-              let adjustedDeltaZ = rawDeltaZ;
-              
-              if (isShift) {
-                 if (Math.abs(rawDeltaX) > Math.abs(rawDeltaZ)) adjustedDeltaZ = 0;
-                 else adjustedDeltaX = 0;
-              }
-              
-              // Use grid snapping if enabled
-              const { snapToGrid, gridMinorStep } = useUIStore.getState();
-              if (snapToGrid && !e.evt.altKey) {
-                 adjustedDeltaX = Math.round(adjustedDeltaX / gridMinorStep) * gridMinorStep;
-                 adjustedDeltaZ = Math.round(adjustedDeltaZ / gridMinorStep) * gridMinorStep;
-              }
-              
-              const items = useUIStore.getState().selectedItems;
-              useProjectStore.getState().updateGroupDrag(adjustedDeltaX, adjustedDeltaZ, items);
-              e.target.position({x: 0, y: 0});
-            }}
-            onDragEnd={(e) => {
-              if (e.target.name() === 'vertex-handle') return;
-              e.cancelBubble = true;
-              e.target.position({x: 0, y: 0});
-              useProjectStore.getState().endGroupDrag(true);
-            }}
           >
+            {/* Fill and Hit Area */}
             <Line
               points={flatPoints}
               closed={true}
               fill={isSelected ? theme.selectionFill : theme.roomFill}
-              stroke={isSelected ? theme.selectionStroke : theme.roomStroke}
-              strokeWidth={isSelected ? 3 : 1.5}
-              dash={area.locked ? [5, 5] : undefined}
+              strokeEnabled={false}
               hitStrokeWidth={10}
               onMouseEnter={(e) => {
                 if (isSelectMode) {
@@ -205,36 +139,50 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale }) => {
                 }
               }}
             />
+            
+            {/* Subtracted Borders */}
+            {area.points.map((p1, i) => {
+              const p2 = area.points[(i + 1) % area.points.length];
+              const visibleSegments = subtractOverlappingWalls(p1, p2, projectData.walls);
+              return visibleSegments.map((seg, segIdx) => (
+                <Line
+                  key={`edge-${i}-${segIdx}`}
+                  points={[seg.start.x * scale, seg.start.z * scale, seg.end.x * scale, seg.end.z * scale]}
+                  stroke={isSelected ? theme.selectionStroke : theme.roomStroke}
+                  strokeWidth={isSelected ? 3 : 1.5}
+                  dash={area.locked ? [5, 5] : [10, 5]}
+                  listening={false}
+                />
+              ));
+            })}
 
             {(showAreaName || (showAreaArea && areaValue > 0) || isSelected) && (
-              <Group x={centroidCanvas.x} y={centroidCanvas.y} listening={false}>
-                 {showAreaName && area.name && (
-                   <Text
-                     text={area.name}
-                     fontSize={16}
-                     fontFamily="Inter, sans-serif"
-                     fontStyle="bold"
-                     fill={theme.roomText}
-                     align="center"
-                     verticalAlign="middle"
-                     offsetX={100}
-                     offsetY={showAreaArea ? 10 : 0}
-                     width={200}
-                   />
-                 )}
-                 {(showAreaArea || isSelected) && areaValue > 0 && (
-                   <Text
-                     text={formatArea(areaValue)}
-                     fontSize={12}
-                     fontFamily="Inter, sans-serif"
-                     fill={theme.textSecondary}
-                     align="center"
-                     verticalAlign="middle"
-                     offsetX={100}
-                     offsetY={showAreaName && area.name ? -10 : 0}
-                     width={200}
-                   />
-                 )}
+              <Group x={centroidCanvas.x * scale} y={centroidCanvas.y * scale} listening={false}>
+                  {showAreaName && (
+                    <Text
+                      text={`${area.name || `Phòng ${index + 1}`}\nS = ${formatArea(getAreaNetSize(area, projectData.walls))}`}
+                      fontSize={16 / zoom}
+                      fill={theme.textPrimary}
+                      align="center"
+                      fontStyle="bold"
+                      verticalAlign="middle"
+                      offsetX={100 / zoom}
+                      offsetY={showAreaName && area.name ? 10 / zoom : 0}
+                      width={200 / zoom}
+                    />
+                  )}
+                  {!showAreaName && (
+                    <Text
+                      text={`S = ${formatArea(getAreaNetSize(area, projectData.walls))}`}
+                      fontSize={14 / zoom}
+                      fill={theme.textSecondary}
+                      align="center"
+                      verticalAlign="middle"
+                      offsetX={100 / zoom}
+                      offsetY={0}
+                      width={200 / zoom}
+                    />
+                  )}
               </Group>
             )}
 
@@ -244,10 +192,10 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale }) => {
                  name="vertex-handle"
                  x={pt.x * scale}
                  y={pt.z * scale}
-                 radius={6}
+                 radius={6 / zoom}
                  fill={theme.appBg}
                  stroke={theme.accent}
-                 strokeWidth={2}
+                 strokeWidth={2 / zoom}
                  draggable
                  onMouseEnter={(e) => {
                     const container = e.target.getStage()?.container();

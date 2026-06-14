@@ -46,6 +46,7 @@ export interface IWall extends IBaseObject {
   thickness: number;
   height: number;
   levelId: string;
+  justification?: 'center' | 'left' | 'right';
 }
 
 export interface IArea extends IBaseObject {
@@ -53,6 +54,7 @@ export interface IArea extends IBaseObject {
   type?: string;
   points: { x: number; z: number }[];
   levelId: string;
+  elevation?: number;
 }
 
 export interface IOpening extends IBaseObject {

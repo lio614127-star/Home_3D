@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { IProject, ISite, IBuilding, IWall, IArea, IOpening, SelectedItem } from '../types';
 import { createDefaultProject } from '../core/project/createDefaultProject';
 
@@ -36,11 +37,13 @@ interface ProjectState {
   redo: () => void;
 }
 
-export const useProjectStore = create<ProjectState>((set) => ({
-  data: createDefaultProject(),
-  groupDragSnapshot: null,
-  past: [],
-  future: [],
+export const useProjectStore = create<ProjectState>()(
+  persist(
+    (set) => ({
+      data: createDefaultProject(),
+      groupDragSnapshot: null,
+      past: [],
+      future: [],
   
   commitHistory: () => set((state) => {
     const cloned = JSON.parse(JSON.stringify(state.data));
@@ -256,4 +259,10 @@ export const useProjectStore = create<ProjectState>((set) => ({
   deleteAnnotation: (id) => set((state) => ({
     data: { ...state.data, annotations: (state.data.annotations || []).filter(a => a.id !== id) }
   })),
-}));
+    }),
+    {
+      name: 'garden-house-project-storage',
+      partialize: (state) => ({ data: state.data }),
+    }
+  )
+);

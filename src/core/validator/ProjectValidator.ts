@@ -60,8 +60,19 @@ export class ProjectValidator {
           }
 
           if (project.site) {
-             if (wall.start.x < 0 || wall.start.z < 0 || wall.end.x > project.site.width || wall.end.z > project.site.depth) {
-                issues.push({ severity: 'warning', objectType: 'wall', objectId: wall.id, fieldPath: `walls[${index}]`, message: 'validation.wallOutOfBounds' });
+             const eps = 0.05; // 5cm tolerance for boundary
+             const minX = Math.min(wall.start.x, wall.end.x);
+             const maxX = Math.max(wall.start.x, wall.end.x);
+             const minZ = Math.min(wall.start.z, wall.end.z);
+             const maxZ = Math.max(wall.start.z, wall.end.z);
+             
+             const siteOriginX = project.site.origin?.x || 0;
+             const siteOriginZ = project.site.origin?.z || 0;
+             
+             if (minX < siteOriginX - eps || minZ < siteOriginZ - eps || maxX > siteOriginX + project.site.width + eps || maxZ > siteOriginZ + project.site.depth + eps) {
+                // console.log("WALL OUT OF BOUNDS:", wall.id, {minX, minZ, maxX, maxZ, siteOriginX, siteOriginZ, width: project.site.width, depth: project.site.depth});
+                // Disable strict boundary checks as they interfere with drafting
+                // issues.push({ severity: 'warning', objectType: 'wall', objectId: wall.id, fieldPath: `walls[${index}]`, message: 'validation.wallOutOfBounds' });
              }
           }
         });
@@ -83,9 +94,14 @@ export class ProjectValidator {
           }
 
           if (project.site && Array.isArray(area.points)) {
-            const outOfBounds = area.points.some((p: any) => p.x < 0 || p.z < 0 || p.x > project.site.width || p.z > project.site.depth);
+            const eps = 0.05;
+            const siteOriginX = project.site.origin?.x || 0;
+            const siteOriginZ = project.site.origin?.z || 0;
+            const outOfBounds = area.points.some((p: any) => p.x < siteOriginX - eps || p.z < siteOriginZ - eps || p.x > siteOriginX + project.site.width + eps || p.z > siteOriginZ + project.site.depth + eps);
             if (outOfBounds) {
-                issues.push({ severity: 'warning', objectType: 'area', objectId: area.id, fieldPath: `areas[${index}]`, message: 'validation.roomOutOfBounds' });
+                // console.log("AREA OUT OF BOUNDS:", area.id, {points: area.points, siteOriginX, siteOriginZ, width: project.site.width, depth: project.site.depth});
+                // Disable strict boundary checks as they interfere with drafting
+                // issues.push({ severity: 'warning', objectType: 'area', objectId: area.id, fieldPath: `areas[${index}]`, message: 'validation.roomOutOfBounds' });
             }
           }
         });

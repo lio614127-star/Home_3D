@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { Line, Group, Circle } from 'react-konva';
 import { IWall } from '../../types';
-import { projectToCanvas, getOffsetFromStartOnWall, normalizeCoord } from '../../core/geometry/math';
+import { projectToCanvas, getOffsetFromStartOnWall, normalizeCoord, getWallCenterline, getWallRenderLine } from '../../core/geometry/math';
 import { resolveBestSnap } from '../../core/geometry/snap';
 import { useUIStore } from '../../store/useUIStore';
 import { useProjectStore } from '../../store/useProjectStore';
@@ -11,9 +11,10 @@ import { useI18nStore } from '../../store/useI18nStore';
 interface Props {
   walls: IWall[];
   scale: number;
+  zoom?: number;
 }
 
-export const WallLayer: React.FC<Props> = ({ walls, scale }) => {
+export const WallLayer: React.FC<Props> = ({ walls, scale, zoom = 1 }) => {
   const { selectedObjectId, setSelectedObject, mode, setMode, snapToGrid, snapToPoints, orthoMode, gridMinorStep, snapTolerancePx, showAlignmentGuides, setActiveGuides, setActiveSnapPoint } = useUIStore();
   const addWall = useProjectStore(state => state.addWall);
   const updateWall = useProjectStore(state => state.updateWall);
@@ -36,8 +37,9 @@ export const WallLayer: React.FC<Props> = ({ walls, scale }) => {
       {walls.map(wall => {
         if (!wall.visible) return null;
         
-        const start = projectToCanvas(wall.start.x, wall.start.z);
-        const end = projectToCanvas(wall.end.x, wall.end.z);
+        const renderLine = getWallRenderLine(wall, walls);
+        const start = projectToCanvas(renderLine.start.x, renderLine.start.z);
+        const end = projectToCanvas(renderLine.end.x, renderLine.end.z);
         const isSelected = selectedObjectId === wall.id || useUIStore.getState().selectedItems.some(it => it.kind === 'wall' && it.wallId === wall.id);
 
         const handleClick = (e: any) => {
@@ -263,7 +265,7 @@ export const WallLayer: React.FC<Props> = ({ walls, scale }) => {
             {/* Base wall */}
             <Line
               points={[start.x * scale, start.y * scale, end.x * scale, end.y * scale]}
-              stroke={theme.wallStroke}
+              stroke={isSelected && mode === 'select' ? theme.accent : theme.wallStroke}
               strokeWidth={wall.thickness * scale}
               hitStrokeWidth={Math.max(wall.thickness * scale + 10, 15)}
               lineCap="square"
@@ -284,14 +286,14 @@ export const WallLayer: React.FC<Props> = ({ walls, scale }) => {
               }}
             />
 
-            {/* Selection overlay */}
-            {isSelected && mode === 'select' && (
+            {/* Topological Skeleton Line - Always visible in addWall mode or when selected to guide snapping */}
+            {(mode === 'addWall' || isSelected) && (
               <Line
-                points={[start.x * scale, start.y * scale, end.x * scale, end.y * scale]}
-                stroke={theme.selectionStroke}
-                strokeWidth={wall.thickness * scale + 4}
-                lineCap="square"
-                opacity={0.3}
+                points={[wall.start.x * scale, wall.start.z * scale, wall.end.x * scale, wall.end.z * scale]}
+                stroke="#00bcd4"
+                strokeWidth={1.5 / zoom}
+                dash={[5 / zoom, 5 / zoom]}
+                opacity={0.8}
                 listening={false}
               />
             )}
@@ -302,10 +304,10 @@ export const WallLayer: React.FC<Props> = ({ walls, scale }) => {
                   name="endpoint-handle"
                   x={start.x * scale}
                   y={start.y * scale}
-                  radius={5}
-                  fill={theme.appBg}
-                  stroke={theme.selectionStroke}
-                  strokeWidth={1.5}
+                  radius={4.5 / zoom}
+                  fill={theme.accent}
+                  stroke="#ffffff"
+                  strokeWidth={2 / zoom}
                   draggable
                   onDragStart={(e) => {
                      e.cancelBubble = true;
@@ -446,10 +448,10 @@ export const WallLayer: React.FC<Props> = ({ walls, scale }) => {
                   name="endpoint-handle"
                   x={end.x * scale}
                   y={end.y * scale}
-                  radius={5}
-                  fill={theme.appBg}
-                  stroke={theme.selectionStroke}
-                  strokeWidth={1.5}
+                  radius={4.5 / zoom}
+                  fill={theme.accent}
+                  stroke="#ffffff"
+                  strokeWidth={2 / zoom}
                   draggable
                   onDragStart={(e) => {
                      e.cancelBubble = true;
