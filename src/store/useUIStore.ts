@@ -38,7 +38,7 @@ interface UIState {
   showOpeningLabels: boolean;
   showGrid2D: boolean;
   activeGuides: { type: 'horizontal' | 'vertical', pos: number }[];
-  activeSnapPoint: { x: number; y: number; type: string; label?: string; priority?: number; wallThickness?: number; wallJustification?: 'center' | 'left' | 'right' } | null;
+  activeSnapPoint: { x: number; y: number; type: string; label?: string; priority?: number; wallThickness?: number; wallJustification?: 'center' | 'left' | 'right'; wallHeight?: number } | null;
   
   setThemeMode: (mode: 'light' | 'dark') => void;
   toggleThemeMode: () => void;
@@ -49,7 +49,7 @@ interface UIState {
   setToolDefaults: (tool: 'wall' | 'area' | 'door' | 'window' | 'measure', defaults: any) => void;
   setValidationIssues: (issues: IValidationIssue[]) => void;
   setActiveGuides: (guides: { type: 'horizontal' | 'vertical', pos: number }[]) => void;
-  setActiveSnapPoint: (point: { x: number; y: number; type: string; label?: string; priority?: number; wallThickness?: number; wallJustification?: 'center' | 'left' | 'right' } | null) => void;
+  setActiveSnapPoint: (point: { x: number; y: number; type: string; label?: string; priority?: number; wallThickness?: number; wallJustification?: 'center' | 'left' | 'right'; wallHeight?: number } | null) => void;
   setDraftingToggle: (key: 'showGrid2D' | 'snapToGrid' | 'snapToPoints' | 'orthoMode' | 'showAlignmentGuides', val: boolean) => void;
   setViewMode: (mode: '2d' | '3d' | 'split') => void;
   setCameraMode: (mode: 'perspective' | 'top') => void;
@@ -64,6 +64,13 @@ const getInitialTheme = (): 'light' | 'dark' => {
   const saved = localStorage.getItem('garden_house_3d_theme');
   if (saved === 'dark' || saved === 'light') return saved;
   return 'light';
+};
+
+const getInitialBool = (key: string, defaultVal: boolean): boolean => {
+  const saved = localStorage.getItem('garden_house_3d_' + key);
+  if (saved === 'true') return true;
+  if (saved === 'false') return false;
+  return defaultVal;
 };
 
 export const useUIStore = create<UIState>((set) => ({
@@ -85,8 +92,8 @@ export const useUIStore = create<UIState>((set) => ({
   snapToGrid: false,
   snapToPoints: true,
   orthoMode: false,
-  showAreaName: true,
-  showAreaArea: true,
+  showAreaName: getInitialBool('showAreaName', true),
+  showAreaArea: getInitialBool('showAreaArea', true),
   showAlignmentGuides: true,
   gridMinorStep: 0.2,
   gridMajorStep: 1.0,
@@ -99,8 +106,8 @@ export const useUIStore = create<UIState>((set) => ({
   show3DWalls: true,
   show3DGrid: true,
   show3DOpenings: true,
-  showManualDimensions: true,
-  showOpeningLabels: true,
+  showManualDimensions: getInitialBool('showManualDimensions', true),
+  showOpeningLabels: getInitialBool('showOpeningLabels', true),
   showGrid2D: true,
   cameraMode: 'perspective',
   setThemeMode: (mode) => {
@@ -123,8 +130,14 @@ export const useUIStore = create<UIState>((set) => ({
   setDraftingToggle: (key, val) => set({ [key]: val }),
   setViewMode: (mode) => set({ viewMode: mode }),
   setCameraMode: (mode) => set({ cameraMode: mode }),
-  setShowAreaName: (showAreaName) => set({ showAreaName }),
-  setShowAreaArea: (showAreaArea) => set({ showAreaArea }),
+  setShowAreaName: (showAreaName) => {
+    localStorage.setItem('garden_house_3d_showAreaName', String(showAreaName));
+    set({ showAreaName });
+  },
+  setShowAreaArea: (showAreaArea) => {
+    localStorage.setItem('garden_house_3d_showAreaArea', String(showAreaArea));
+    set({ showAreaArea });
+  },
   setShowAlignmentGuides: (showAlignmentGuides) => set({ showAlignmentGuides }),
   toggle3DLayer: (layer) => set((state) => {
     switch (layer) {
@@ -137,11 +150,12 @@ export const useUIStore = create<UIState>((set) => ({
     return state;
   }),
   toggle2DDisplay: (key) => set((state) => {
+    let newVal;
     switch (key) {
-      case 'areaName': return { showAreaName: !state.showAreaName };
-      case 'areaArea': return { showAreaArea: !state.showAreaArea };
-      case 'manualDim': return { showManualDimensions: !state.showManualDimensions };
-      case 'openingLabel': return { showOpeningLabels: !state.showOpeningLabels };
+      case 'areaName': newVal = !state.showAreaName; localStorage.setItem('garden_house_3d_showAreaName', String(newVal)); return { showAreaName: newVal };
+      case 'areaArea': newVal = !state.showAreaArea; localStorage.setItem('garden_house_3d_showAreaArea', String(newVal)); return { showAreaArea: newVal };
+      case 'manualDim': newVal = !state.showManualDimensions; localStorage.setItem('garden_house_3d_showManualDimensions', String(newVal)); return { showManualDimensions: newVal };
+      case 'openingLabel': newVal = !state.showOpeningLabels; localStorage.setItem('garden_house_3d_showOpeningLabels', String(newVal)); return { showOpeningLabels: newVal };
     }
     return state;
   })

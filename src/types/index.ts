@@ -59,6 +59,8 @@ export interface IArea extends IBaseObject {
   elevation?: number;
   textSize?: number;
   color?: string;
+  showName?: boolean;
+  showArea?: boolean;
 }
 
 export interface IOpening extends IBaseObject {

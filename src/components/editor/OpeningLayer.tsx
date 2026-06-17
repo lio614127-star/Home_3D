@@ -5,6 +5,7 @@ import { useI18nStore } from '../../store/useI18nStore';
 import { useProjectStore } from '../../store/useProjectStore';
 import { IOpening, IWall } from '../../types';
 import { getOpeningCenter, projectToCanvas } from '../../core/geometry/math';
+import { useTheme } from '../../theme/tokens';
 
 interface Props {
   openings: IOpening[];
@@ -17,6 +18,7 @@ export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale, zoom = 1
   const { selectedObjectId, setSelectedObject, mode, showOpeningLabels } = useUIStore();
   const updateOpening = useProjectStore(state => state.updateOpening);
   const { t } = useI18nStore();
+  const theme = useTheme();
 
   return (
     <Group>
@@ -152,7 +154,7 @@ export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale, zoom = 1
             
             {/* Text Label */}
             {(showOpeningLabels || isSelected) && (
-              <Group x={0} y={-visualThickness / 2 - 22} listening={false}>
+              <Group x={0} y={-visualThickness / 2 - 22} rotation={Math.abs(wallYaw) > 90 ? 180 : 0} listening={false}>
                 <Rect 
                   x={-((opening.type === 'door' ? t("object.door") : t("object.window")).length * 5 + 40) / 2}
                   y={-6}

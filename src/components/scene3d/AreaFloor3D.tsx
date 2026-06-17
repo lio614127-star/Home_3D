@@ -22,8 +22,9 @@ export const AreaFloor3D: React.FC<{ area: IArea, baseHeight: number, index?: nu
   if (!area.visible || !shape) return null;
 
   const isSelected = selectedObjectId === area.id || selectedItems.some(it => it.kind === 'area' && it.areaId === area.id);
-  const baseColor = area.color || (theme.room3DFill.startsWith('rgba') ? '#cccccc' : theme.room3DFill);
-  const color = isSelected ? theme.selected3DColor : baseColor;
+  // Default to floor color in 3D, don't use 2D area.color unless we want to map it. 
+  // User requested white/default when not selected, and highlighted when selected.
+  const color = isSelected ? theme.selected3DColor : theme.floor3DFill;
 
   if (!area.elevation || area.elevation <= 0) {
     // If it's a 0m elevation logical zone, ONLY render it in 3D if it's currently selected to highlight it.

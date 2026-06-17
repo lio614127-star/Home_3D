@@ -69,7 +69,7 @@ export function getUnifiedSnapCandidates(pointerX: number, pointerZ: number, pro
       if (area.points && Array.isArray(area.points)) {
         area.points.forEach((p, i) => {
           // Vertex
-          candidates.push({ x: p.x, z: p.z, type: 'areaVertex', label: 'Góc khu vực', priority: 1 });
+          candidates.push({ x: p.x, z: p.z, type: 'areaVertex', label: 'Góc khu vực', priority: 2.1 });
           
           // Edge projection
           const nextPt = area.points[(i + 1) % area.points.length];
@@ -84,7 +84,7 @@ export function getUnifiedSnapCandidates(pointerX: number, pointerZ: number, pro
             const t = Math.max(0, Math.min(len, vx * lx + vz * lz));
             const px = p.x + lx * t;
             const pz = p.z + lz * t;
-            candidates.push({ x: px, z: pz, type: 'areaEdge', label: 'Cạnh khu vực', priority: 2 });
+            candidates.push({ x: px, z: pz, type: 'areaEdge', label: 'Cạnh khu vực', priority: 2.2 });
           }
         });
       }
@@ -112,15 +112,15 @@ export function getUnifiedSnapCandidates(pointerX: number, pointerZ: number, pro
       const isSamePoint = (p1: {x: number, z: number}, p2: {x: number, z: number}) => Math.abs(p1.x - p2.x) < eps && Math.abs(p1.z - p2.z) < eps;
 
       // Centerline endpoints (topological connections) - MUST be pushed FIRST so they win ties over visual corners!
-      candidates.push({ x: wall.start.x, z: wall.start.z, type: 'wallCenter', label: 'Điểm nối tường', priority: 1, wallId: wall.id, wallThickness: wall.thickness, wallJustification: wall.justification });
-      candidates.push({ x: wall.end.x, z: wall.end.z, type: 'wallCenter', label: 'Điểm nối tường', priority: 1, wallId: wall.id, wallThickness: wall.thickness, wallJustification: wall.justification });
+      candidates.push({ x: wall.start.x, z: wall.start.z, type: 'wallCenter', label: 'Điểm nối tường', priority: 1, wallId: wall.id, wallThickness: wall.thickness, wallJustification: wall.justification, wallHeight: wall.height });
+      candidates.push({ x: wall.end.x, z: wall.end.z, type: 'wallCenter', label: 'Điểm nối tường', priority: 1, wallId: wall.id, wallThickness: wall.thickness, wallJustification: wall.justification, wallHeight: wall.height });
 
       const poly = getWallPolygon(wall, project.walls);
       if (poly) {
         // Dedup points to avoid double pushing
         const pts = [poly.pLeftStart, poly.pRightStart, poly.pLeftEnd, poly.pRightEnd];
         pts.forEach(p => {
-          candidates.push({ x: p.x, z: p.z, type: 'wallEndpoint', label: 'Góc mép tường', priority: 1 });
+          candidates.push({ x: p.x, z: p.z, type: 'wallEndpoint', label: 'Góc mép tường', priority: 1, wallId: wall.id, wallThickness: wall.thickness, wallJustification: wall.justification, wallHeight: wall.height });
         });
       } else {
         const t2 = (wall.thickness || 0.2) / 2;
@@ -128,41 +128,52 @@ export function getUnifiedSnapCandidates(pointerX: number, pointerZ: number, pro
           const pt = isStart ? start : end;
           const pLeft = { x: pt.x + nx * t2, z: pt.z + nz * t2 };
           const pRight = { x: pt.x - nx * t2, z: pt.z - nz * t2 };
-          candidates.push({ x: pLeft.x, z: pLeft.z, type: 'wallEndpoint', label: 'Góc mép tường', priority: 1 });
-          candidates.push({ x: pRight.x, z: pRight.z, type: 'wallEndpoint', label: 'Góc mép tường', priority: 1 });
+          candidates.push({ x: pLeft.x, z: pLeft.z, type: 'wallEndpoint', label: 'Góc mép tường', priority: 1, wallId: wall.id, wallThickness: wall.thickness, wallJustification: wall.justification, wallHeight: wall.height });
+          candidates.push({ x: pRight.x, z: pRight.z, type: 'wallEndpoint', label: 'Góc mép tường', priority: 1, wallId: wall.id, wallThickness: wall.thickness, wallJustification: wall.justification, wallHeight: wall.height });
         };
         pushCornersForEndpoint(true);
         pushCornersForEndpoint(false);
       }
 
-      const vx = pointerX - start.x;
-      const vz = pointerZ - start.z;
+    if (wall.visible) {
+      const centerLine = getWallCenterline(wall);
+      const dx = centerLine.end.x - centerLine.start.x;
+      const dz = centerLine.end.z - centerLine.start.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len === 0) return;
+      const lx = dx / len;
+      const lz = dz / len;
+      const nx = -lz;
+      const nz = lx;
+
+      const vx = pointerX - centerLine.start.x;
+      const vz = pointerZ - centerLine.start.z;
       let t = Math.max(0, Math.min(len, vx * lx + vz * lz));
-      let px = start.x + lx * t;
-      let pz = start.z + lz * t;
+      let px = centerLine.start.x + lx * t;
+      let pz = centerLine.start.z + lz * t;
       
-      // Snap along the line if it's axis-aligned and grid snap is enabled
       if (gridOpts?.snapToGrid && gridOpts.gridMinorStep) {
         const step = gridOpts.gridMinorStep;
         if (Math.abs(lz) < 0.001) { // Horizontal
            px = Math.round(px / step) * step;
-           px = Math.max(Math.min(px, Math.max(start.x, end.x)), Math.min(start.x, end.x));
+           px = Math.max(Math.min(px, Math.max(centerLine.start.x, centerLine.end.x)), Math.min(centerLine.start.x, centerLine.end.x));
         } else if (Math.abs(lx) < 0.001) { // Vertical
            pz = Math.round(pz / step) * step;
-           pz = Math.max(Math.min(pz, Math.max(start.z, end.z)), Math.min(start.z, end.z));
+           pz = Math.max(Math.min(pz, Math.max(centerLine.start.z, centerLine.end.z)), Math.min(centerLine.start.z, centerLine.end.z));
         }
       }
 
       // Always emit candidates for measurement/snapping
-      candidates.push({ x: px, z: pz, type: 'wallCenter', label: 'Tim tường', priority: 2 });
+      candidates.push({ x: px, z: pz, type: 'wallCenter', label: 'Tim tường', priority: 2, wallId: wall.id, wallThickness: wall.thickness, wallJustification: wall.justification, wallHeight: wall.height });
       
       const hx1 = px + nx * (wall.thickness / 2);
       const hz1 = pz + nz * (wall.thickness / 2);
-      candidates.push({ x: hx1, z: hz1, type: 'wallFace', label: 'Mép tường', priority: 2 });
+      candidates.push({ x: hx1, z: hz1, type: 'wallFace', label: 'Mép tường', priority: 2, wallId: wall.id, wallThickness: wall.thickness, wallJustification: wall.justification, wallHeight: wall.height });
       
       const hx2 = px - nx * (wall.thickness / 2);
       const hz2 = pz - nz * (wall.thickness / 2);
-      candidates.push({ x: hx2, z: hz2, type: 'wallFace', label: 'Mép tường', priority: 2 });
+      candidates.push({ x: hx2, z: hz2, type: 'wallFace', label: 'Mép tường', priority: 2, wallId: wall.id, wallThickness: wall.thickness, wallJustification: wall.justification, wallHeight: wall.height });
+    }
     }
   });
 
@@ -197,30 +208,15 @@ export function getUnifiedSnapCandidates(pointerX: number, pointerZ: number, pro
     }
   }
 
-  // Areas
-  project.areas.forEach(area => {
-    area.points.forEach((pt, i) => {
-      const nextPt = area.points[(i + 1) % area.points.length];
-      
-      // Vertex candidate
-      candidates.push({ x: pt.x, z: pt.z, type: 'areaVertex', label: 'Góc khu vực', priority: 1 });
-      
-      // Edge candidate
-      const dx = nextPt.x - pt.x;
-      const dz = nextPt.z - pt.z;
-      const len = Math.sqrt(dx * dx + dz * dz);
-      if (len > 0) {
-        const lx = dx / len;
-        const lz = dz / len;
-        const vx = pointerX - pt.x;
-        const vz = pointerZ - pt.z;
-        const t = Math.max(0, Math.min(len, vx * lx + vz * lz));
-        const px = pt.x + lx * t;
-        const pz = pt.z + lz * t;
-        candidates.push({ x: px, z: pz, type: 'areaEdge', label: 'Cạnh khu vực', priority: 2 });
+  // Dimensions (Annotations)
+  if (Array.isArray(project.annotations)) {
+    project.annotations.forEach(ann => {
+      if (ann.type === 'dimension') {
+        candidates.push({ x: ann.start.x, z: ann.start.z, type: 'wallEndpoint', label: 'Điểm đo đạc', priority: 1 });
+        candidates.push({ x: ann.end.x, z: ann.end.z, type: 'wallEndpoint', label: 'Điểm đo đạc', priority: 1 });
       }
     });
-  });
+  }
 
   return candidates;
 }
@@ -247,6 +243,20 @@ export function resolveBestSnap(
   let projX = pointerX;
   let projZ = pointerZ;
 
+  // Soft Ortho: Auto-lock to horizontal or vertical if the mouse is very close to the axis
+  if (!opts.orthoMode && opts.startPoint) {
+    const dx = Math.abs(pointerX - opts.startPoint.x);
+    const dz = Math.abs(pointerZ - opts.startPoint.z);
+    // Lock if slope is less than ~5.7 degrees (1/10)
+    if (dx > 0 || dz > 0) {
+      if (dz < dx * 0.1) {
+        projZ = opts.startPoint.z;
+      } else if (dx < dz * 0.1) {
+        projX = opts.startPoint.x;
+      }
+    }
+  }
+
   if (opts.orthoMode && opts.startPoint) {
     const dx = Math.abs(pointerX - opts.startPoint.x);
     const dz = Math.abs(pointerZ - opts.startPoint.z);
@@ -265,7 +275,7 @@ export function resolveBestSnap(
   let finalPriority: number = 99;
 
   if (opts.snapToPoints) {
-    const candidates = getUnifiedSnapCandidates(pointerX, pointerZ, project, { snapToGrid: opts.snapToGrid, gridMinorStep: opts.gridMinorStep });
+    const candidates = getUnifiedSnapCandidates(projX, projZ, project, { snapToGrid: opts.snapToGrid, gridMinorStep: opts.gridMinorStep });
     
     // Evaluate candidates with strict priority logic
     for (const c of candidates) {
@@ -281,7 +291,12 @@ export function resolveBestSnap(
       const screenDz = (cz - projZ) * opts.scale;
       const screenDist = Math.sqrt(screenDx * screenDx + screenDz * screenDz);
 
-      const tolerance = c.priority === 1 ? VERTEX_TOLERANCE_PX : EDGE_TOLERANCE_PX;
+      const isPointFeature = c.type.includes('Vertex') || c.type.includes('Endpoint') || c.type.includes('Corner');
+      let tolerance = isPointFeature ? VERTEX_TOLERANCE_PX : EDGE_TOLERANCE_PX;
+      
+      if (opts.snapToGrid && opts.gridMinorStep) {
+        tolerance = Math.max(tolerance, opts.gridMinorStep * opts.scale * 0.55);
+      }
 
       if (screenDist <= tolerance) {
         // Strict priority check
@@ -396,6 +411,7 @@ export function resolveBestSnap(
     priority: finalPriority,
     guides,
     wallThickness: bestCandidate?.wallThickness,
-    wallJustification: bestCandidate?.wallJustification
+    wallJustification: bestCandidate?.wallJustification,
+    wallHeight: bestCandidate?.wallHeight
   };
 }

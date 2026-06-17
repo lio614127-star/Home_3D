@@ -1,0 +1,437 @@
+{
+  "version": "1.1.0",
+  "project": {
+    "id": "proj_1781330187456",
+    "name": "Mẫu nhà vườn 2026",
+    "unit": "meter"
+  },
+  "site": {
+    "id": "site_1",
+    "width": 21,
+    "depth": 54,
+    "frontDirection": "Tây Bắc",
+    "origin": {
+      "x": 10,
+      "y": 0,
+      "z": 8
+    },
+    "layer": "site",
+    "visible": true,
+    "locked": true
+  },
+  "building": {
+    "id": "building_1",
+    "width": 12,
+    "depth": 10,
+    "origin": {
+      "x": 4.5,
+      "y": 0,
+      "z": 5
+    },
+    "anchor": "front_left_corner",
+    "floorHeight": 0.6,
+    "wallHeight": 3.6,
+    "wallThickness": 0.2,
+    "layer": "walls",
+    "visible": false,
+    "locked": false
+  },
+  "levels": [
+    {
+      "id": "level_1",
+      "name": "Trệt",
+      "elevation": 0.6,
+      "height": 3.6
+    }
+  ],
+  "walls": [
+    {
+      "id": "wall_1781339392160_j84y0",
+      "start": {
+        "x": 10,
+        "z": 8
+      },
+      "end": {
+        "x": 10,
+        "z": 62
+      },
+      "thickness": 0.1,
+      "height": 2.8,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "left",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781339394240_7okzz",
+      "start": {
+        "x": 10,
+        "z": 62
+      },
+      "end": {
+        "x": 31,
+        "z": 62
+      },
+      "thickness": 0.1,
+      "height": 2.8,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "left",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781339397407_qw7f0",
+      "start": {
+        "x": 31,
+        "z": 62
+      },
+      "end": {
+        "x": 31,
+        "z": 8
+      },
+      "thickness": 0.1,
+      "height": 2.8,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "left",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781339402025_91ee7",
+      "start": {
+        "x": 31,
+        "z": 8
+      },
+      "end": {
+        "x": 10.05,
+        "z": 8
+      },
+      "thickness": 0.1,
+      "height": 2.8,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "left",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781429145692_rlabm",
+      "start": {
+        "x": 11,
+        "z": 13
+      },
+      "end": {
+        "x": 23,
+        "z": 13
+      },
+      "thickness": 0.2,
+      "height": 3.6,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "right",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781429150265_v8rhk",
+      "start": {
+        "x": 23,
+        "z": 13
+      },
+      "end": {
+        "x": 23,
+        "z": 25
+      },
+      "thickness": 0.2,
+      "height": 3.6,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "right",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781429152516_m7jb0",
+      "start": {
+        "x": 23,
+        "z": 25
+      },
+      "end": {
+        "x": 11,
+        "z": 25
+      },
+      "thickness": 0.2,
+      "height": 3.6,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "right",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781429157123_4cvm6",
+      "start": {
+        "x": 11,
+        "z": 25
+      },
+      "end": {
+        "x": 11,
+        "z": 13.2
+      },
+      "thickness": 0.2,
+      "height": 3.6,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "right",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781429376419_nzooi",
+      "start": {
+        "x": 14.2,
+        "z": 13.2
+      },
+      "end": {
+        "x": 14.2,
+        "z": 15.2
+      },
+      "thickness": 0.1,
+      "height": 3.6,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "left",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781429379001_x3mnl",
+      "start": {
+        "x": 14.2,
+        "z": 15.2
+      },
+      "end": {
+        "x": 11.2,
+        "z": 15.2
+      },
+      "thickness": 0.1,
+      "height": 3.6,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "left",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781429392901_yfi8o",
+      "start": {
+        "x": 12,
+        "z": 8.1
+      },
+      "end": {
+        "x": 12,
+        "z": 9.6
+      },
+      "thickness": 0.1,
+      "height": 3.6,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "left",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781429394779_h826f",
+      "start": {
+        "x": 12,
+        "z": 9.6
+      },
+      "end": {
+        "x": 10,
+        "z": 9.6
+      },
+      "thickness": 0.1,
+      "height": 3.6,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "left",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781429403924_2fh13",
+      "start": {
+        "x": 12,
+        "z": 9.6
+      },
+      "end": {
+        "x": 12,
+        "z": 11.6
+      },
+      "thickness": 0.1,
+      "height": 3.6,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "left",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781429406849_ryo29",
+      "start": {
+        "x": 12,
+        "z": 11.6
+      },
+      "end": {
+        "x": 10,
+        "z": 11.6
+      },
+      "thickness": 0.1,
+      "height": 3.6,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "left",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "wall_1781429915956_d9akd",
+      "start": {
+        "x": 14.2,
+        "z": 15.2
+      },
+      "end": {
+        "x": 14.2,
+        "z": 24.8
+      },
+      "thickness": 0.1,
+      "height": 3.6,
+      "levelId": "level_1",
+      "layer": "walls",
+      "justification": "left",
+      "visible": true,
+      "locked": false
+    }
+  ],
+  "areas": [
+    {
+      "id": "area_1781429164318_36ipa",
+      "name": "",
+      "type": "custom_area",
+      "points": [
+        {
+          "x": 11.2,
+          "z": 13.2
+        },
+        {
+          "x": 22.799999999999997,
+          "z": 13.2
+        },
+        {
+          "x": 22.799999999999997,
+          "z": 24.799999999999997
+        },
+        {
+          "x": 11.200000000000001,
+          "z": 24.799999999999997
+        }
+      ],
+      "levelId": "level_1",
+      "layer": "areas",
+      "visible": true,
+      "locked": false,
+      "elevation": 1,
+      "textSize": 1
+    },
+    {
+      "id": "area_1781429260407_jo7ga",
+      "name": "PLV",
+      "type": "custom_area",
+      "points": [
+        {
+          "x": 11.2,
+          "z": 13.2
+        },
+        {
+          "x": 14.2,
+          "z": 13.2
+        },
+        {
+          "x": 14.2,
+          "z": 15.2
+        },
+        {
+          "x": 11.2,
+          "z": 15.2
+        }
+      ],
+      "levelId": "level_1",
+      "layer": "areas",
+      "visible": true,
+      "locked": false,
+      "textSize": 0.4
+    },
+    {
+      "id": "area_1781429561861_m050p",
+      "name": "nhà vệ sinh",
+      "type": "custom_area",
+      "points": [
+        {
+          "x": 10.05,
+          "z": 8.100000000000001
+        },
+        {
+          "x": 12,
+          "z": 8.1
+        },
+        {
+          "x": 12,
+          "z": 9.6
+        },
+        {
+          "x": 10.100000000000001,
+          "z": 9.6
+        }
+      ],
+      "levelId": "level_1",
+      "layer": "areas",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "area_1781429569820_52nkh",
+      "name": "",
+      "type": "custom_area",
+      "points": [
+        {
+          "x": 10.100000000000001,
+          "z": 9.7
+        },
+        {
+          "x": 12,
+          "z": 9.700000000000001
+        },
+        {
+          "x": 12,
+          "z": 11.6
+        },
+        {
+          "x": 10.100000000000001,
+          "z": 11.6
+        }
+      ],
+      "levelId": "level_1",
+      "layer": "areas",
+      "visible": true,
+      "locked": false
+    }
+  ],
+  "openings": [],
+  "roofs": [],
+  "placedAssets": [],
+  "annotations": [],
+  "materials": []
+}

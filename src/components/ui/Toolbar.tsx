@@ -6,6 +6,7 @@ import { useUIStore } from '../../store/useUIStore';
 import { useI18nStore } from '../../store/useI18nStore';
 import { Language } from '../../i18n/types';
 import { useTheme } from '../../theme/tokens';
+import { useSavedProjectsStore } from '../../store/useSavedProjectsStore';
 
 export const Toolbar: React.FC = () => {
   const project = useProjectStore(state => state.data);
@@ -44,6 +45,10 @@ export const Toolbar: React.FC = () => {
       const result = projectSerializer.deserialize(content);
       
       if (result.success && result.data) {
+        // Import file as a new project
+        const fileName = file.name.replace(/\.[^/.]+$/, "");
+        useSavedProjectsStore.getState().createProject(fileName, result.data);
+        
         setProject(result.data);
         setValidationIssues(result.issues || []);
         alert(t("validation.importSuccess"));

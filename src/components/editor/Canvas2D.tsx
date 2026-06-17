@@ -5,7 +5,7 @@ import { useUIStore } from '../../store/useUIStore';
 import { SiteLayer } from './SiteLayer';
 import { BuildingLayer } from './BuildingLayer';
 import { WallLayer } from './WallLayer';
-import { AreaLayer } from './AreaLayer';
+import { AreaLayer, AreaHandles } from './AreaLayer';
 import { OpeningLayer } from './OpeningLayer';
 import { DimensionLayer, DimensionCAD } from './DimensionLayer';
 import { GridLayer } from './GridLayer';
@@ -330,7 +330,7 @@ export const Canvas2D: React.FC = () => {
     useUIStore.getState().setActiveSnapPoint(
       snapState.snapped ? { 
         x: finalX, y: finalZ, type: finalType || 'unknown', label: snapState.label, priority: snapState.priority,
-        wallThickness: snapState.wallThickness, wallJustification: snapState.wallJustification
+        wallThickness: snapState.wallThickness, wallJustification: snapState.wallJustification, wallHeight: snapState.wallHeight
       } : null
     );
 
@@ -478,11 +478,16 @@ export const Canvas2D: React.FC = () => {
   const handleStageClick = (e: any) => {
     if (isSpaceDown) return;
 
-    // If right click, cancel chain
+    // If right click, cancel chain/draft but stay in the current mode
     if (e.evt.button === 2) {
       if (mode === 'addWall') setWallChainAnchor(null);
-      if (mode === 'measure') setMeasureChainAnchor(null);
+      if (mode === 'measure') {
+        setMeasureDraftStart(null);
+        setMeasureDraftEnd(null);
+      }
       if (mode === 'addArea') setAreaDraftStart(null);
+      
+      useUIStore.getState().setActiveGuides([]);
       return;
     }
 
@@ -586,12 +591,13 @@ export const Canvas2D: React.FC = () => {
     if (!currentAnchor) {
       if (mode === 'addWall') {
         const snapPoint = useUIStore.getState().activeSnapPoint;
-        if (snapPoint && snapPoint.wallJustification) {
+        if (snapPoint && (snapPoint.wallJustification || snapPoint.wallThickness || snapPoint.wallHeight)) {
           const currentDefaults = useUIStore.getState().toolDefaults;
           useUIStore.getState().setToolDefaults('wall', {
             ...currentDefaults.wall,
-            justification: snapPoint.wallJustification,
-            thickness: snapPoint.wallThickness || currentDefaults.wall.thickness
+            justification: snapPoint.wallJustification || currentDefaults.wall.justification,
+            thickness: snapPoint.wallThickness || currentDefaults.wall.thickness,
+            height: snapPoint.wallHeight || currentDefaults.wall.height
           });
         }
         setWallChainAnchor({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
@@ -795,7 +801,7 @@ export const Canvas2D: React.FC = () => {
 
     // Opening (Door/Window) preview
     if (mode === 'addDoor' || mode === 'addWindow') {
-      const { width } = useUIStore.getState().toolDefaults.opening;
+      const { width } = mode === 'addDoor' ? useUIStore.getState().toolDefaults.door : useUIStore.getState().toolDefaults.window;
       let hoveredWall: any = null;
       let minDistance = Infinity;
       let projP = mousePos;
@@ -819,6 +825,10 @@ export const Canvas2D: React.FC = () => {
       }
 
       if (hoveredWall) {
+         const { start: cStart, end: cEnd } = getWallCenterline(hoveredWall);
+         const cDx = cEnd.x - cStart.x;
+         const cDz = cEnd.z - cStart.z;
+         
          const dx = hoveredWall.end.x - hoveredWall.start.x;
          const dz = hoveredWall.end.z - hoveredWall.start.z;
          const wallYaw = Math.atan2(dz, dx) * (180 / Math.PI);
@@ -827,13 +837,19 @@ export const Canvas2D: React.FC = () => {
          const distToStart = Math.sqrt((projP.x - hoveredWall.start.x)**2 + (projP.z - hoveredWall.start.z)**2);
          const distToEnd = Math.sqrt((projP.x - hoveredWall.end.x)**2 + (projP.z - hoveredWall.end.z)**2);
 
+         const wallLen = Math.sqrt(dx*dx + dz*dz);
+         const uLine = wallLen > 0 ? distToStart / wallLen : 0;
+         const visualX = cStart.x + uLine * cDx;
+         const visualZ = cStart.z + uLine * cDz;
+
          const leftDist = Math.max(0, distToStart - width / 2);
          const rightDist = Math.max(0, distToEnd - width / 2);
          
          const color = mode === 'addDoor' ? '#f57c00' : '#00b0ff';
+         const textRotation = Math.abs(wallYaw) > 90 ? 180 : 0;
 
          elements.push(
-            <Group key="preview-opening" x={projP.x * PX_PER_METER} y={projP.z * PX_PER_METER} rotation={wallYaw} listening={false}>
+            <Group key="preview-opening" x={visualX * PX_PER_METER} y={visualZ * PX_PER_METER} rotation={wallYaw} listening={false}>
               <Rect 
                  x={- (width * PX_PER_METER) / 2} 
                  y={- (thickness * PX_PER_METER) / 2}
@@ -845,8 +861,11 @@ export const Canvas2D: React.FC = () => {
                  strokeWidth={2 / zoom}
               />
               <Text 
-                 x={-20 / zoom}
-                 y={- (thickness * PX_PER_METER) / 2 - 15 / zoom}
+                 x={0}
+                 y={- (thickness * PX_PER_METER) / 2 - 9 / zoom}
+                 offsetX={20 / zoom}
+                 offsetY={6 / zoom}
+                 rotation={textRotation}
                  text={`${width.toFixed(2)}m`}
                  fontSize={12 / zoom}
                  fill="#fff"
@@ -858,14 +877,36 @@ export const Canvas2D: React.FC = () => {
               <Group>
                 <Line points={[- (width * PX_PER_METER) / 2, 0, - (width * PX_PER_METER) / 2 - leftDist * PX_PER_METER, 0]} stroke="#00bcd4" strokeWidth={1.5 / zoom} dash={[5 / zoom, 5 / zoom]} />
                 <Line points={[- (width * PX_PER_METER) / 2 - leftDist * PX_PER_METER, -10 / zoom, - (width * PX_PER_METER) / 2 - leftDist * PX_PER_METER, 10 / zoom]} stroke="#00bcd4" strokeWidth={2 / zoom} />
-                <Text x={- (width * PX_PER_METER) / 2 - (leftDist * PX_PER_METER) / 2 - 20 / zoom} y={-15 / zoom} text={leftDist.toFixed(2)} fontSize={12 / zoom} fill="#00bcd4" align="center" width={40 / zoom} />
+                <Text 
+                  x={- (width * PX_PER_METER) / 2 - (leftDist * PX_PER_METER) / 2} 
+                  y={-9 / zoom} 
+                  offsetX={20 / zoom}
+                  offsetY={6 / zoom}
+                  rotation={textRotation}
+                  text={leftDist.toFixed(2)} 
+                  fontSize={12 / zoom} 
+                  fill="#00bcd4" 
+                  align="center" 
+                  width={40 / zoom} 
+                />
               </Group>
               
               {/* Right dimension line */}
               <Group>
                 <Line points={[(width * PX_PER_METER) / 2, 0, (width * PX_PER_METER) / 2 + rightDist * PX_PER_METER, 0]} stroke="#00bcd4" strokeWidth={1.5 / zoom} dash={[5 / zoom, 5 / zoom]} />
                 <Line points={[(width * PX_PER_METER) / 2 + rightDist * PX_PER_METER, -10 / zoom, (width * PX_PER_METER) / 2 + rightDist * PX_PER_METER, 10 / zoom]} stroke="#00bcd4" strokeWidth={2 / zoom} />
-                <Text x={(width * PX_PER_METER) / 2 + (rightDist * PX_PER_METER) / 2 - 20 / zoom} y={-15 / zoom} text={rightDist.toFixed(2)} fontSize={12 / zoom} fill="#00bcd4" align="center" width={40 / zoom} />
+                <Text 
+                  x={(width * PX_PER_METER) / 2 + (rightDist * PX_PER_METER) / 2} 
+                  y={-9 / zoom} 
+                  offsetX={20 / zoom}
+                  offsetY={6 / zoom}
+                  rotation={textRotation}
+                  text={rightDist.toFixed(2)} 
+                  fontSize={12 / zoom} 
+                  fill="#00bcd4" 
+                  align="center" 
+                  width={40 / zoom} 
+                />
               </Group>
             </Group>
          );
@@ -944,6 +985,9 @@ export const Canvas2D: React.FC = () => {
       if (measureDraftStart && !measureDraftEnd) {
         const p1 = projectToCanvas(measureDraftStart.x, measureDraftStart.z);
         const p2 = projectToCanvas(mousePos.x, mousePos.z);
+        const distance = Math.sqrt((mousePos.x - measureDraftStart.x)**2 + (mousePos.z - measureDraftStart.z)**2);
+        const midX = (p1.x + p2.x) / 2;
+        const midY = (p1.y + p2.y) / 2;
         
         elements.push(
           <Group key="measure-draft" listening={false}>
@@ -960,6 +1004,17 @@ export const Canvas2D: React.FC = () => {
               stroke={theme.dimensionStroke}
               strokeWidth={1.5 / zoom}
               dash={[5 / zoom, 5 / zoom]}
+            />
+            <Text
+              x={midX * PX_PER_METER}
+              y={midY * PX_PER_METER - 15 / zoom}
+              text={formatMeters(distance)}
+              fill={theme.dimensionStroke}
+              fontSize={14 / zoom}
+              fontStyle="bold"
+              align="center"
+              offsetX={40 / zoom}
+              width={80 / zoom}
             />
           </Group>
         );
@@ -1121,9 +1176,18 @@ export const Canvas2D: React.FC = () => {
               />
             )}
             <SiteLayer site={project.site} scale={PX_PER_METER} zoom={zoom} />
-            <BuildingLayer building={project.building} scale={PX_PER_METER} />
+          </Group>
+        </Layer>
+        <Layer opacity={0.65}>
+          <Group scaleX={zoom} scaleY={zoom} listening={!isSpaceDown}>
             <AreaLayer areas={project.areas} scale={PX_PER_METER} zoom={zoom} />
+          </Group>
+        </Layer>
+        <Layer>
+          <Group scaleX={zoom} scaleY={zoom} listening={!isSpaceDown}>
+            <BuildingLayer building={project.building} scale={PX_PER_METER} />
             <WallLayer walls={project.walls} scale={PX_PER_METER} zoom={zoom} />
+            <AreaHandles areas={project.areas} scale={PX_PER_METER} zoom={zoom} />
             {show3DOpenings && <OpeningLayer openings={project.openings || []} walls={project.walls} scale={PX_PER_METER} zoom={zoom} />}
             <DimensionLayer walls={project.walls} areas={project.areas} building={project.building} scale={PX_PER_METER} zoom={zoom} />
             <GuideLayer 

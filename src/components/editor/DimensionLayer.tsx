@@ -59,7 +59,8 @@ export const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist,
   const op2y = p2y + ny * offsetPx;
 
   // Architectural tick marks (45 degree angles)
-  const tickLen = 4 / zoom;
+  const tickLenMeters = 0.08;
+  const tickLen = tickLenMeters * scale;
   const tick1 = [op1x - tickLen, op1y - tickLen, op1x + tickLen, op1y + tickLen];
   const tick2 = [op2x - tickLen, op2y - tickLen, op2x + tickLen, op2y + tickLen];
 
@@ -73,14 +74,17 @@ export const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist,
     angle += 180;
   }
 
-  // Push text exactly above the line
-  const textPush = 6 / zoom;
+  // Fixed physical font size in meters (so it scales with the drawing like Area text)
+  const physicalFontSizeMeters = Math.max(0.12, Math.min(len * 0.15, 0.25));
+  const dynamicFontSize = physicalFontSizeMeters * scale;
+
+  // Push text exactly above the line, accounting for half the font height plus a gap
+  const gapMeters = 0.05;
+  const textPush = (dynamicFontSize / 2) + (gapMeters * scale);
   const txtX = midX + nx * textPush;
   const txtY = midY + ny * textPush;
 
-  // Dynamic font size: scales between 11px and 26px based on dimension length
-  const baseFontSize = Math.max(11, Math.min(len * 4, 26));
-  const dynamicFontSize = baseFontSize / zoom;
+
 
   const [dragContext, setDragContext] = React.useState<{ ptrDist: number, initOffset: number } | null>(null);
 
@@ -171,8 +175,8 @@ export const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist,
       }}
     >
       {/* Witness lines */}
-      <Line points={[p1x + nx * (2/zoom), p1y + ny * (2/zoom), op1x + nx * (5/zoom), op1y + ny * (5/zoom)]} stroke={color} strokeWidth={1/zoom} opacity={0.6} listening={false} dash={[4/zoom, 4/zoom]} />
-      <Line points={[p2x + nx * (2/zoom), p2y + ny * (2/zoom), op2x + nx * (5/zoom), op2y + ny * (5/zoom)]} stroke={color} strokeWidth={1/zoom} opacity={0.6} listening={false} dash={[4/zoom, 4/zoom]} />
+      <Line points={[p1x + nx * (0.05*scale), p1y + ny * (0.05*scale), op1x + nx * (0.15*scale), op1y + ny * (0.15*scale)]} stroke={color} strokeWidth={1/zoom} opacity={0.6} listening={false} dash={[0.1*scale, 0.1*scale]} />
+      <Line points={[p2x + nx * (0.05*scale), p2y + ny * (0.05*scale), op2x + nx * (0.15*scale), op2y + ny * (0.15*scale)]} stroke={color} strokeWidth={1/zoom} opacity={0.6} listening={false} dash={[0.1*scale, 0.1*scale]} />
       
       {/* Main dimension line */}
       <Line points={[op1x, op1y, op2x, op2y]} stroke={isSelected ? '#ffff00' : color} strokeWidth={isSelected ? 2/zoom : 1/zoom} listening={false} />

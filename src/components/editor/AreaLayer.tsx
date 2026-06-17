@@ -130,7 +130,7 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale, zoom = 1 }) => {
             <Line
               points={flatPoints}
               closed={true}
-              fill={isSelected ? theme.selectionFill : (area.color ? `${area.color}66` : theme.roomFill)}
+              fill={isSelected ? theme.selectionFill : (area.color ? area.color : theme.roomFill)}
               strokeEnabled={false}
               hitStrokeWidth={10}
               onMouseEnter={(e) => {
@@ -163,39 +163,61 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale, zoom = 1 }) => {
               ));
             })}
 
-            {(showAreaName || (showAreaArea && areaValue > 0) || isSelected) && (
-              <Group x={centroidCanvas.x * scale} y={centroidCanvas.y * scale} listening={false}>
-                  {showAreaName && (
-                    <Text
-                      text={`${area.name || `Phòng ${index + 1}`}\n${formatArea(getAreaNetSize(area, projectData.walls))}`}
-                      fontSize={actualTextSize * scale}
-                      fill={theme.textPrimary}
-                      align="center"
-                      fontStyle="bold"
-                      verticalAlign="middle"
-                      x={-10000}
-                      y={-10000}
-                      width={20000}
-                      height={20000}
-                    />
-                  )}
-                  {!showAreaName && (
-                    <Text
-                      text={`${formatArea(getAreaNetSize(area, projectData.walls))}`}
-                      fontSize={actualTextSize * scale}
-                      fill={theme.textSecondary}
-                      align="center"
-                      verticalAlign="middle"
-                      x={-10000}
-                      y={-10000}
-                      width={20000}
-                      height={20000}
-                    />
-                  )}
-              </Group>
-            )}
+            {(() => {
+              const shouldShowName = area.showName ?? showAreaName;
+              const shouldShowArea = area.showArea ?? showAreaArea;
+              const namePart = shouldShowName ? (area.name || `Phòng ${index + 1}`) : '';
+              const areaPart = shouldShowArea && areaValue > 0 ? formatArea(getAreaNetSize(area, projectData.walls)) : '';
+              const displayText = [namePart, areaPart].filter(Boolean).join('\n');
+              
+              if (!displayText && !isSelected) return null;
 
-            {isSelected && isSelectMode && area.points.map((pt, idx) => (
+              return (
+                <Group x={centroidCanvas.x * scale} y={centroidCanvas.y * scale} listening={false}>
+                    {displayText && (
+                      <Text
+                        text={displayText}
+                        fontSize={actualTextSize * scale}
+                        fill={theme.textPrimary}
+                        align="center"
+                        fontStyle={showAreaName ? "bold" : "normal"}
+                        verticalAlign="middle"
+                        x={-10000}
+                        y={-10000}
+                        width={20000}
+                        height={20000}
+                      />
+                    )}
+                </Group>
+              );
+            })()}
+
+            {/* Handles are now rendered separately in AreaHandles */}
+          </Group>
+        );
+      })}
+    </Group>
+  );
+};
+
+export const AreaHandles: React.FC<Props & { areas: IArea[] }> = ({ areas, scale, zoom = 1 }) => {
+  const { selectedObjectId, mode, snapToGrid, snapToPoints, gridMinorStep, snapTolerancePx, showAlignmentGuides, setActiveGuides, setActiveSnapPoint } = useUIStore();
+  const updateArea = useProjectStore(state => state.updateArea);
+  const projectData = useProjectStore(state => state.data);
+  const theme = useTheme();
+  const isSelectMode = mode === 'select';
+
+  return (
+    <Group listening={isSelectMode}>
+      {areas.map((area) => {
+        if (!area.visible) return null;
+        const isSelected = selectedObjectId === area.id || useUIStore.getState().selectedItems.some(it => it.kind === 'area' && it.areaId === area.id);
+        
+        if (!isSelected || !isSelectMode) return null;
+
+        return (
+          <Group key={`handles-${area.id}`}>
+            {area.points.map((pt, idx) => (
                <Circle
                  key={`vertex-${idx}`}
                  name="vertex-handle"
@@ -226,8 +248,7 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale, zoom = 1 }) => {
                     const pos = stage.getPointerPosition();
                     if (!pos) return;
                     
-                    // Use zoom group transform for accurate coordinates
-                    const zoomGroup = stage.children?.[0]?.children?.[0];
+                    const zoomGroup = stage.children?.[0]?.children?.[0] || stage.children?.[2]?.children?.[0];
                     if (!zoomGroup) return;
                     const transform = zoomGroup.getAbsoluteTransform().copy().invert();
                     const proj = transform.point(pos);
@@ -282,7 +303,6 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale, zoom = 1 }) => {
                        setActiveSnapPoint(null);
                     }
                     
-                    // Reset handle position to match the store data
                     e.target.position({x: finalX * scale, y: finalZ * scale});
                  }}
                  onDragEnd={(e) => {

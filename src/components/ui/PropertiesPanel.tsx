@@ -6,7 +6,7 @@ import { useI18nStore } from '../../store/useI18nStore';
 import { useTheme } from '../../theme/tokens';
 
 export const PropertiesPanel: React.FC = () => {
-  const { selectedObjectId, selectedObjectType, selectedItems } = useUIStore();
+  const { selectedObjectId, selectedObjectType, selectedItems, showAreaName, showAreaArea } = useUIStore();
   const project = useProjectStore(state => state.data);
   const updateSite = useProjectStore(state => state.updateSite);
   const updateBuilding = useProjectStore(state => state.updateBuilding);
@@ -25,7 +25,7 @@ export const PropertiesPanel: React.FC = () => {
   }
 
   if (!selectedObjectId || !selectedObjectType) {
-    const { showAreaName, showAreaArea, showManualDimensions, showOpeningLabels, toggle2DDisplay, mode, toolDefaults, setToolDefaults } = useUIStore.getState();
+    const { showManualDimensions, showOpeningLabels, toggle2DDisplay, mode, toolDefaults, setToolDefaults } = useUIStore.getState();
 
     if (mode === 'addWall') {
       return (
@@ -293,6 +293,8 @@ export const PropertiesPanel: React.FC = () => {
       updateArea(area.id, { points: newPoints });
     };
 
+    const usedColors = Array.from(new Set(project.areas.map(a => a.color).filter(c => c && c !== theme.roomStroke)));
+
     return (
       <div style={{ padding: '15px', fontSize: '13px', boxSizing: 'border-box', width: '100%', color: theme.textPrimary }}>
         <h3 style={{ marginTop: 0, marginBottom: '15px' }}>{t("object.area")}</h3>
@@ -311,6 +313,25 @@ export const PropertiesPanel: React.FC = () => {
             <input type="color" value={area.color || theme.roomStroke} onChange={e => updateArea(area.id, { color: e.target.value })} style={{ cursor: 'pointer', padding: '0', border: 'none', width: '40px', height: '30px', borderRadius: '4px' }} />
             <button onClick={() => updateArea(area.id, { color: undefined })} style={{ padding: '5px 10px', fontSize: '12px', cursor: 'pointer', border: '1px solid #ccc', borderRadius: '4px', background: theme.toolbarBg, color: theme.textPrimary }}>Mặc định</button>
           </div>
+          {usedColors.length > 0 && (
+            <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {usedColors.map((c: string) => (
+                <div 
+                  key={c}
+                  onClick={() => updateArea(area.id, { color: c })}
+                  style={{ 
+                    width: '24px', height: '24px', 
+                    backgroundColor: c, 
+                    border: '1px solid #999', 
+                    borderRadius: '4px', 
+                    cursor: 'pointer',
+                    boxShadow: area.color === c ? `0 0 0 2px ${theme.accent}` : 'none'
+                  }}
+                  title={`Tái sử dụng màu này (${c})`}
+                />
+              ))}
+            </div>
+          )}
         </div>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>Độ cao nền (m)</label>
@@ -337,6 +358,26 @@ export const PropertiesPanel: React.FC = () => {
             }} 
             style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} 
           />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: '500' }}>
+            <input 
+              type="checkbox" 
+              checked={area.showName ?? showAreaName} 
+              onChange={e => updateArea(area.id, { showName: e.target.checked })} 
+            />
+            Hiển thị Tên phòng
+          </label>
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: '500' }}>
+            <input 
+              type="checkbox" 
+              checked={area.showArea ?? showAreaArea} 
+              onChange={e => updateArea(area.id, { showArea: e.target.checked })} 
+            />
+            Hiển thị Diện tích
+          </label>
         </div>
         <div style={{ marginTop: '15px' }}>
           <p><strong>{t("field.area")}:</strong> {areaValue.toFixed(2)} m²</p>
@@ -447,7 +488,7 @@ export const PropertiesPanel: React.FC = () => {
     );
   }
 
-  const { showAreaName, showAreaArea, showManualDimensions, showOpeningLabels, toggle2DDisplay } = useUIStore.getState();
+  const { showManualDimensions, showOpeningLabels, toggle2DDisplay } = useUIStore.getState();
 
   return (
     <div style={{ padding: '15px', fontSize: '13px', boxSizing: 'border-box', width: '100%', color: theme.textPrimary }}>
