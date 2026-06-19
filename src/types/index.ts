@@ -14,6 +14,8 @@ export interface IBaseObject {
   layer: string;
   visible: boolean;
   locked: boolean;
+  selectable?: boolean;
+  rotation?: number; // Rotation in degrees (0-360)
 }
 
 export interface ISite extends IBaseObject {
@@ -24,15 +26,16 @@ export interface ISite extends IBaseObject {
   textSize?: number;
 }
 
-export interface IBuilding extends IBaseObject {
-  width: number;
-  depth: number;
-  origin: Vector3;
-  anchor: 'front_left_corner';
-  floorHeight: number;
-  wallHeight: number;
-  wallThickness: number;
-  textSize?: number;
+export interface IBuilding {
+  id: string;
+  name: string;
+  rotation: number;
+  hidden?: boolean;
+  locked?: boolean;
+  createdAt?: number;
+  footprint?: { x: number; z: number }[];
+  footprintVersion?: number;
+  footprintDirty?: boolean;
 }
 
 export interface ILevel {
@@ -49,6 +52,7 @@ export interface IWall extends IBaseObject {
   height: number;
   levelId: string;
   justification?: 'center' | 'left' | 'right';
+  buildingId?: string;
 }
 
 export interface IArea extends IBaseObject {
@@ -61,6 +65,7 @@ export interface IArea extends IBaseObject {
   color?: string;
   showName?: boolean;
   showArea?: boolean;
+  buildingId?: string;
 }
 
 export interface IOpening extends IBaseObject {
@@ -74,6 +79,7 @@ export interface IOpening extends IBaseObject {
   openDirection?: 'inward' | 'outward';
   swingAngle?: number;
   assetId?: string;
+  buildingId?: string;
 }
 
 export interface IDimension extends IBaseObject {
@@ -81,6 +87,20 @@ export interface IDimension extends IBaseObject {
   start: { x: number; z: number };
   end: { x: number; z: number };
   offsetDistance: number;
+  buildingId?: string;
+}
+
+export interface IRoof extends IBaseObject {
+  buildingId: string;
+  type: 'flat' | 'japanese' | 'thai';
+  overhang: number;
+  elevation: number;
+  height?: number;
+  angle?: number;
+  ridgeDirection?: 'auto' | 'horizontal' | 'vertical';
+  material?: {
+    type: 'concrete' | 'tile' | 'metal';
+  };
 }
 
 export interface IProject {
@@ -91,12 +111,12 @@ export interface IProject {
     unit: string;
   };
   site: ISite;
-  building: IBuilding;
+  buildings: IBuilding[];
   levels: ILevel[];
   walls: IWall[];
   areas: IArea[];
   openings: IOpening[];
-  roofs: any[];
+  roofs: IRoof[];
   placedAssets: any[];
   annotations: any[];
   materials: any[];
@@ -110,16 +130,13 @@ export interface IValidationIssue {
   message: string;
 }
 
-export type SelectedItem =
-  | { kind: "wall"; wallId: string }
-  | { kind: "wallEndpoint"; wallId: string; endpoint: "start" | "end" }
-  | { kind: "area"; areaId: string }
-  | { kind: "areaVertex"; areaId: string; pointIndex: number }
-  | { kind: "opening"; openingId: string }
-  | { kind: "dimension"; annotationId: string }
-  | { kind: "dimensionEndpoint"; annotationId: string; endpoint: "start" | "end" }
-  | { kind: "building" }
-  | { kind: "site" };
+export interface SelectedItem {
+  id: string;
+  type: 'site' | 'building' | 'wall' | 'area' | 'opening' | 'dimension' | 'roof' | 'wallEndpoint' | 'areaVertex' | 'dimensionEndpoint';
+  // Extra fields for endpoints/vertices during drag operations
+  endpoint?: 'start' | 'end';
+  pointIndex?: number;
+}
 
 export interface IValidationResult {
   isValid: boolean; // false if there's any fatal error

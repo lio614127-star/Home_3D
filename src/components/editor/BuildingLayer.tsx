@@ -5,6 +5,7 @@ import { projectToCanvas } from '../../core/geometry/math';
 import { useUIStore } from '../../store/useUIStore';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useTheme } from '../../theme/tokens';
+import { SelectionManager } from '../../core/selection/SelectionManager';
 
 interface Props {
   building: IBuilding;
@@ -30,7 +31,7 @@ export const BuildingLayer: React.FC<Props> = ({ building, scale }) => {
       }
       if (e.evt.button === 0) {
         e.cancelBubble = true;
-        setSelectedObject(building.id, 'building');
+        SelectionManager.handleSingleClick({ type: 'building', id: building.id }, e.evt);
       }
     }
   };

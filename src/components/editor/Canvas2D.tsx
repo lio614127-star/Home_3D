@@ -7,11 +7,13 @@ import { BuildingLayer } from './BuildingLayer';
 import { WallLayer } from './WallLayer';
 import { AreaLayer, AreaHandles } from './AreaLayer';
 import { OpeningLayer } from './OpeningLayer';
+import { RoofLayer } from './RoofLayer';
 import { DimensionLayer, DimensionCAD } from './DimensionLayer';
 import { GridLayer } from './GridLayer';
 import { GuideLayer } from './GuideLayer';
 import { canvasToProject, projectToCanvas, rectContainsPoint, rectIntersectsSegment, rectIntersectsPolygon, getWallLength, getWallCenterline, getWallRenderLine, RectProject, getMeasureSnapCandidates, MeasureCandidate, formatMeters, formatArea, formatSize, normalizeCoord } from '../../core/geometry/math';
 import { resolveBestSnap, SnapCandidate } from '../../core/geometry/snap';
+import { SelectionManager } from '../../core/selection/SelectionManager';
 import { SelectedItem } from '../../types';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useTheme } from '../../theme/tokens';
@@ -80,6 +82,23 @@ export const Canvas2D: React.FC = () => {
         useProjectStore.getState().redo();
       }
 
+      if (e.type === 'keydown' && (e.code === 'KeyD' && (e.ctrlKey || e.metaKey))) {
+        if ((e.target instanceof HTMLInputElement && (e.target.type === 'text' || e.target.type === 'number')) || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) return;
+        e.preventDefault();
+        const { selectedItems, setSelectedItems, selectedObjectId, selectedObjectType } = useUIStore.getState();
+        let itemsToDuplicate = selectedItems;
+        if (itemsToDuplicate.length === 0 && selectedObjectId && selectedObjectType) {
+          itemsToDuplicate = [{ id: selectedObjectId, type: selectedObjectType }];
+        }
+        if (itemsToDuplicate.length > 0) {
+          useProjectStore.getState().commitHistory();
+          const newSelection = useProjectStore.getState().duplicateSelection(itemsToDuplicate);
+          if (newSelection.length > 0) {
+            setSelectedItems(newSelection);
+          }
+        }
+      }
+
       if (e.type === 'keydown' && (e.code === 'Delete' || e.code === 'Backspace')) {
         if ((e.target instanceof HTMLInputElement && (e.target.type === 'text' || e.target.type === 'number')) || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) return;
         
@@ -90,11 +109,11 @@ export const Canvas2D: React.FC = () => {
         if (selectedItems && selectedItems.length > 0) {
           useProjectStore.getState().commitHistory();
           selectedItems.forEach(item => {
-            if (item.kind === 'site') useProjectStore.getState().deleteSite();
-            if (item.kind === 'wall') useProjectStore.getState().deleteWall(item.wallId);
-            if (item.kind === 'area') useProjectStore.getState().deleteArea(item.areaId);
-            if (item.kind === 'opening') useProjectStore.getState().deleteOpening(item.openingId);
-            if (item.kind === 'dimension') useProjectStore.getState().deleteAnnotation(item.annotationId);
+            if (item.type === 'site') useProjectStore.getState().deleteSite();
+            if (item.type === 'wall') useProjectStore.getState().deleteWall(item.id);
+            if (item.type === 'area') useProjectStore.getState().deleteArea(item.id);
+            if (item.type === 'opening') useProjectStore.getState().deleteOpening(item.id);
+            if (item.type === 'dimension') useProjectStore.getState().deleteAnnotation(item.id);
           });
           setSelectedItems([]);
           deletedAny = true;
@@ -119,7 +138,8 @@ export const Canvas2D: React.FC = () => {
         const { setMode, setSelectedObject, setSelectedItems, setActiveGuides } = useUIStore.getState();
         setMode('select');
         setWallChainAnchor(null);
-        setMeasureChainAnchor(null);
+        setMeasureDraftStart(null);
+        setMeasureDraftEnd(null);
         setAreaDraftStart(null);
         setSiteDraftStart(null);
         setMousePos(null);
@@ -219,12 +239,12 @@ export const Canvas2D: React.FC = () => {
     const hitRadius = 0.5; // half meter detection radius
     const rect: RectProject = { minX: projX - hitRadius, maxX: projX + hitRadius, minZ: projZ - hitRadius, maxZ: projZ + hitRadius };
     for (const item of selectedItems) {
-       if (item.kind === 'wall') {
-          const w = project.walls.find(w => w.id === item.wallId);
+       if (item.type === 'wall') {
+          const w = project.walls.find(w => w.id === item.id);
           if (w && rectIntersectsSegment(rect, w.start, w.end)) return true;
        }
-       if (item.kind === 'area') {
-          const a = project.areas.find(a => a.id === item.areaId);
+       if (item.type === 'area') {
+          const a = project.areas.find(a => a.id === item.id);
           if (a && rectIntersectsPolygon(rect, a.points)) return true;
        }
     }
@@ -353,126 +373,11 @@ export const Canvas2D: React.FC = () => {
       return;
     }
 
-    const { mode, marqueeStart, marqueeEnd, setMarquee, setSelectedItems, setSelectedObject } = useUIStore.getState();
+    const { mode, marqueeStart, marqueeEnd } = useUIStore.getState();
+    const shiftKey = e.evt.shiftKey;
     
-    if (mode === 'select' && marqueeStart && marqueeEnd) {
-      const minX = Math.min(marqueeStart.x, marqueeEnd.x);
-      const maxX = Math.min(marqueeStart.x, marqueeEnd.x) === marqueeStart.x ? Math.max(marqueeStart.x, marqueeEnd.x) : Math.max(marqueeStart.x, marqueeEnd.x);
-      const minZ = Math.min(marqueeStart.z, marqueeEnd.z);
-      const maxZ = Math.min(marqueeStart.z, marqueeEnd.z) === marqueeStart.z ? Math.max(marqueeStart.z, marqueeEnd.z) : Math.max(marqueeStart.z, marqueeEnd.z);
-      
-      const rect: RectProject = { minX, maxX, minZ, maxZ };
-      const items: SelectedItem[] = [];
-
-      // Check walls & endpoints
-      project.walls.forEach(wall => {
-        const startIn = rectContainsPoint(rect, wall.start);
-        const endIn = rectContainsPoint(rect, wall.end);
-        
-        if (startIn && endIn) {
-          items.push({ kind: 'wall', wallId: wall.id });
-        } else if (startIn) {
-          items.push({ kind: 'wallEndpoint', wallId: wall.id, endpoint: 'start' });
-        } else if (endIn) {
-          items.push({ kind: 'wallEndpoint', wallId: wall.id, endpoint: 'end' });
-        } else if (rectIntersectsSegment(rect, wall.start, wall.end)) {
-          items.push({ kind: 'wall', wallId: wall.id });
-        }
-      });
-
-      // Check areas & vertices
-      project.areas.forEach(area => {
-        let allIn = true;
-        let anyVertexSelected = false;
-        area.points.forEach((pt, idx) => {
-          if (rectContainsPoint(rect, pt)) {
-            items.push({ kind: 'areaVertex', areaId: area.id, pointIndex: idx });
-            anyVertexSelected = true;
-          } else {
-            allIn = false;
-          }
-        });
-        
-        if (allIn) {
-          // If all points are in, select the area block, remove duplicate vertices
-          items.push({ kind: 'area', areaId: area.id });
-        } else if (!anyVertexSelected && rectIntersectsPolygon(rect, area.points)) {
-          items.push({ kind: 'area', areaId: area.id });
-        }
-      });
-
-      // Check openings (simplified bounding check via center)
-      const openings = project.openings || [];
-      openings.forEach(o => {
-        const wall = project.walls.find(w => w.id === o.wallId);
-        if (!wall) return;
-        const dx = wall.end.x - wall.start.x;
-        const dz = wall.end.z - wall.start.z;
-        const len = getWallLength(wall);
-        if (len === 0) return;
-        const cx = wall.start.x + (dx / len) * (o.offsetFromStart + o.width / 2);
-        const cz = wall.start.z + (dz / len) * (o.offsetFromStart + o.width / 2);
-        if (rectContainsPoint(rect, {x: cx, z: cz})) {
-           items.push({ kind: 'opening', openingId: o.id });
-        }
-      });
-
-      // Check dimensions
-      const dimensionsList = project.annotations?.filter(a => a.type === 'dimension') || [];
-      dimensionsList.forEach(dim => {
-        const startIn = rectContainsPoint(rect, dim.start);
-        const endIn = rectContainsPoint(rect, dim.end);
-        if (startIn && endIn) {
-           items.push({ kind: 'dimension', annotationId: dim.id });
-        } else if (startIn) {
-           items.push({ kind: 'dimensionEndpoint', annotationId: dim.id, endpoint: 'start' });
-        } else if (endIn) {
-           items.push({ kind: 'dimensionEndpoint', annotationId: dim.id, endpoint: 'end' });
-        } else if (rectIntersectsSegment(rect, dim.start, dim.end)) {
-           items.push({ kind: 'dimension', annotationId: dim.id });
-        }
-      });
-
-      // Deduplicate logic
-      const deduped: SelectedItem[] = [];
-      const selectedWallIds = new Set(items.filter(i => i.kind === 'wall').map(i => (i as any).wallId));
-      const selectedAreaIds = new Set(items.filter(i => i.kind === 'area').map(i => (i as any).areaId));
-      
-      for (const item of items) {
-        if (item.kind === 'wallEndpoint' && selectedWallIds.has(item.wallId)) continue;
-        if (item.kind === 'areaVertex' && selectedAreaIds.has(item.areaId)) continue;
-        if (item.kind === 'opening') {
-           const op = project.openings.find(o => o.id === item.openingId);
-           if (op && selectedWallIds.has(op.wallId)) continue;
-        }
-        deduped.push(item);
-      }
-
-      if (e.evt.shiftKey) {
-        // Add to existing
-        const existing = useUIStore.getState().selectedItems || [];
-        // Deep deduplication is complex, but basic is fine. We will just append for now and let sets naturally handle it or we can just append
-        const newSet = new Map<string, SelectedItem>();
-        [...existing, ...deduped].forEach(it => newSet.set(JSON.stringify(it), it));
-        setSelectedItems(Array.from(newSet.values()));
-      } else {
-        setSelectedItems(deduped);
-      }
-      
-      // Keep single selectedObjectId compatible if len === 1
-      if (deduped.length === 1) {
-         if (deduped[0].kind === 'wall' || deduped[0].kind === 'wallEndpoint') setSelectedObject(deduped[0].wallId, 'wall');
-         if (deduped[0].kind === 'area' || deduped[0].kind === 'areaVertex') setSelectedObject(deduped[0].areaId, 'area');
-         if (deduped[0].kind === 'opening') setSelectedObject(deduped[0].openingId, 'opening');
-         if (deduped[0].kind === 'dimension' || deduped[0].kind === 'dimensionEndpoint') setSelectedObject(deduped[0].annotationId, 'dimension');
-      } else {
-         setSelectedObject(null, null);
-      }
-
-      setMarquee(null, null);
-    } else {
-      setMarquee(null, null);
-    }
+    // Delegate to SelectionManager
+    SelectionManager.handlePointerUp(mode, marqueeStart, marqueeEnd, shiftKey);
   };
 
   const handleStageClick = (e: any) => {
@@ -704,6 +609,7 @@ export const Canvas2D: React.FC = () => {
     if (mode === 'select' && marqueeStart && marqueeEnd) {
        const p1 = projectToCanvas(marqueeStart.x, marqueeStart.z);
        const p2 = projectToCanvas(marqueeEnd.x, marqueeEnd.z);
+       const isLeftToRight = p2.x > p1.x;
        elements.push(
          <Rect
            key="marquee-rect"
@@ -711,9 +617,10 @@ export const Canvas2D: React.FC = () => {
            y={Math.min(p1.y, p2.y) * PX_PER_METER}
            width={Math.abs(p1.x - p2.x) * PX_PER_METER}
            height={Math.abs(p1.y - p2.y) * PX_PER_METER}
-           fill="rgba(0, 188, 212, 0.15)"
-           stroke="#00bcd4"
+           fill={isLeftToRight ? "rgba(0, 188, 212, 0.15)" : "rgba(76, 175, 80, 0.15)"}
+           stroke={isLeftToRight ? "#00bcd4" : "#4caf50"}
            strokeWidth={1 / zoom}
+           dash={isLeftToRight ? undefined : [5 / zoom, 5 / zoom]}
            listening={false}
          />
        );
@@ -1185,11 +1092,12 @@ export const Canvas2D: React.FC = () => {
         </Layer>
         <Layer>
           <Group scaleX={zoom} scaleY={zoom} listening={!isSpaceDown}>
-            <BuildingLayer building={project.building} scale={PX_PER_METER} />
+            {/* <BuildingLayer /> removed in Phase 9.5 */}
             <WallLayer walls={project.walls} scale={PX_PER_METER} zoom={zoom} />
+            <RoofLayer scale={PX_PER_METER} />
             <AreaHandles areas={project.areas} scale={PX_PER_METER} zoom={zoom} />
             {show3DOpenings && <OpeningLayer openings={project.openings || []} walls={project.walls} scale={PX_PER_METER} zoom={zoom} />}
-            <DimensionLayer walls={project.walls} areas={project.areas} building={project.building} scale={PX_PER_METER} zoom={zoom} />
+            <DimensionLayer walls={project.walls} areas={project.areas} buildings={project.buildings} scale={PX_PER_METER} zoom={zoom} />
             <GuideLayer 
               scale={PX_PER_METER} 
               zoom={zoom} 

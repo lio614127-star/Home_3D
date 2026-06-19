@@ -599,3 +599,132 @@ export function clipPolygon(subjectPolygon: {x: number, z: number}[], clipPolygo
 export function getAreaNetSize(area: IArea, walls: IWall[]): number {
   return getPolygonArea(area.points);
 }
+
+import polygonClipping from 'polygon-clipping';
+
+export function computeBuildingFootprint(buildingId: string, walls: IWall[]): { x: number; z: number }[] | null {
+  const bWalls = walls.filter(w => w.buildingId === buildingId && w.visible);
+  if (bWalls.length < 3) return null;
+
+  const polysToUnion: polygonClipping.Geom[] = [];
+  
+  for (const w of bWalls) {
+    const wallPoly = getWallPolygon(w, bWalls);
+    if (!wallPoly) continue;
+    
+    const p1 = wallPoly.pLeftStart;
+    const p2 = wallPoly.pLeftEnd;
+    const p3 = wallPoly.pRightEnd;
+    const p4 = wallPoly.pRightStart;
+    
+    // GeoJSON strictly requires exterior rings to be counter-clockwise.
+    // p1(LeftStart) -> p4(RightStart) -> p3(RightEnd) -> p2(LeftEnd) -> p1
+    const ring: polygonClipping.Ring = [
+      [p1.x, p1.z],
+      [p4.x, p4.z],
+      [p3.x, p3.z],
+      [p2.x, p2.z],
+      [p1.x, p1.z]
+    ];
+    
+    // Valid polygons in polygon-clipping must be non-self-intersecting.
+    // A standard quad is fine.
+    polysToUnion.push([ring]);
+  }
+  
+  if (polysToUnion.length === 0) return null;
+  
+  try {
+    const unionResult = polygonClipping.union(polysToUnion[0], ...polysToUnion.slice(1));
+    
+    let maxArea = -1;
+    let bestRing: { x: number; z: number }[] = [];
+    
+    for (const poly of unionResult) {
+      const outerRing = poly[0];
+      const pts = outerRing.map(p => ({ x: p[0], z: p[1] }));
+      if (pts.length > 1 && Math.abs(pts[0].x - pts[pts.length - 1].x) < 0.001 && Math.abs(pts[0].z - pts[pts.length - 1].z) < 0.001) {
+        pts.pop();
+      }
+      
+      const area = getPolygonArea(pts);
+      if (area > maxArea) {
+        maxArea = area;
+        bestRing = pts;
+      }
+    }
+    
+    return bestRing.length >= 3 ? bestRing : null;
+    
+  } catch (err) {
+    console.error("Footprint computation failed", err);
+    // Fallback: return a bounding box of all walls
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    for (const w of bWalls) {
+      minX = Math.min(minX, w.start.x, w.end.x);
+      minZ = Math.min(minZ, w.start.z, w.end.z);
+      maxX = Math.max(maxX, w.start.x, w.end.x);
+      maxZ = Math.max(maxZ, w.start.z, w.end.z);
+    }
+    const padding = 0.1;
+    return [
+      { x: minX - padding, z: minZ - padding },
+      { x: maxX + padding, z: minZ - padding },
+      { x: maxX + padding, z: maxZ + padding },
+      { x: minX - padding, z: maxZ + padding }
+    ];
+  }
+}
+
+/**
+ * Basic polygon offset for outward overhangs.
+ * Assumes counter-clockwise points (if footprint is clockwise, the normal will invert, 
+ * but we handle orientation below).
+ */
+export function offsetPolygon(points: { x: number; z: number }[], offset: number): { x: number; z: number }[] {
+  if (points.length < 3 || offset === 0) return points;
+  
+  // Calculate signed area to determine orientation
+  let signedArea = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p1 = points[i];
+    const p2 = points[(i + 1) % points.length];
+    signedArea += (p1.x * p2.z - p2.x * p1.z);
+  }
+  // If signed area is negative, it's clockwise. Outer ring from polygon-clipping is typically CCW (positive area),
+  // but if it is CW, the outward normal would point "left" instead of "right".
+  // Let's standardise the normal direction.
+  const isCW = signedArea < 0;
+  const directionMultiplier = isCW ? -1 : 1;
+  
+  const edges = points.map((p1, i) => {
+    const p2 = points[(i + 1) % points.length];
+    const dx = p2.x - p1.x;
+    const dz = p2.z - p1.z;
+    const len = Math.sqrt(dx*dx + dz*dz);
+    
+    // Right-hand normal
+    let nx = directionMultiplier * (dz / len);
+    let nz = directionMultiplier * (-dx / len);
+    
+    return {
+      start: { x: p1.x + nx * offset, z: p1.z + nz * offset },
+      end: { x: p2.x + nx * offset, z: p2.z + nz * offset }
+    };
+  });
+  
+  const newPoints: { x: number; z: number }[] = [];
+  for (let i = 0; i < edges.length; i++) {
+    const e1 = edges[i];
+    const e2 = edges[(i + 1) % edges.length];
+    
+    const inter = lineIntersection(e1.start, e1.end, e2.start, e2.end);
+    if (inter) {
+      newPoints.push(inter);
+    } else {
+      // Parallel (shouldn't happen for adjacent edges unless co-linear)
+      newPoints.push(e1.end);
+    }
+  }
+  return newPoints;
+}

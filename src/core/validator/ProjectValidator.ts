@@ -22,21 +22,12 @@ export class ProjectValidator {
         }
       }
 
-      if (!project.building) {
-        issues.push({ severity: 'fatal', objectType: 'building', objectId: 'building', fieldPath: 'building', message: 'validation.missingBuilding' });
-      } else {
-        if (isInvalidNumber(project.building.width) || project.building.width <= 0) {
-          issues.push({ severity: 'fatal', objectType: 'building', objectId: project.building.id, fieldPath: 'building.width', message: 'validation.buildingWidthInvalid' });
-        }
-        if (isInvalidNumber(project.building.depth) || project.building.depth <= 0) {
-          issues.push({ severity: 'fatal', objectType: 'building', objectId: project.building.id, fieldPath: 'building.depth', message: 'validation.buildingDepthInvalid' });
-        }
-        if (project.building.layer !== 'walls') {
-          issues.push({ severity: 'fatal', objectType: 'building', objectId: project.building.id, fieldPath: 'building.layer', message: 'validation.buildingLayerInvalid' });
-        }
-        if (project.building.anchor !== 'front_left_corner') {
-          issues.push({ severity: 'fatal', objectType: 'building', objectId: project.building.id, fieldPath: 'building.anchor', message: 'validation.buildingAnchorInvalid' });
-        }
+      if (Array.isArray(project.buildings)) {
+        project.buildings.forEach((building: any, index: number) => {
+          if (!building.id) {
+             issues.push({ severity: 'fatal', objectType: 'building', objectId: `building_${index}`, fieldPath: `buildings[${index}]`, message: 'validation.missingBuildingId' });
+          }
+        });
       }
 
       if (Array.isArray(project.walls)) {

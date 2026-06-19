@@ -7,6 +7,7 @@ import { useUIStore } from '../../store/useUIStore';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useTheme } from '../../theme/tokens';
 import { useI18nStore } from '../../store/useI18nStore';
+import { SelectionManager } from '../../core/selection/SelectionManager';
 
 interface Props {
   walls: IWall[];
@@ -172,7 +173,10 @@ export const WallLayer: React.FC<Props> = ({ walls, scale, zoom = 1 }) => {
         }
       }
 
-      const isSelected = selectedObjectId === wall.id || useUIStore.getState().selectedItems.some(it => it.kind === 'wall' && it.wallId === wall.id);
+      const uiState = useUIStore.getState();
+      const isSelected = selectedObjectId === wall.id || 
+                         (wall.buildingId && selectedObjectId === wall.buildingId && uiState.selectedObjectType === 'building') || 
+                         uiState.selectedItems.some(it => (it.type === 'wall' && it.id === wall.id) || (it.type === 'building' && it.id === wall.buildingId));
 
       return {
         wall,
@@ -207,12 +211,15 @@ export const WallLayer: React.FC<Props> = ({ walls, scale, zoom = 1 }) => {
         const renderLine = getWallRenderLine(wall, walls);
         const start = projectToCanvas(renderLine.start.x, renderLine.start.z);
         const end = projectToCanvas(renderLine.end.x, renderLine.end.z);
-        const isSelected = selectedObjectId === wall.id || useUIStore.getState().selectedItems.some(it => it.kind === 'wall' && it.wallId === wall.id);
+        const uiState = useUIStore.getState();
+        const isSelected = selectedObjectId === wall.id || 
+                           (wall.buildingId && selectedObjectId === wall.buildingId && uiState.selectedObjectType === 'building') || 
+                           uiState.selectedItems.some(it => (it.type === 'wall' && it.id === wall.id) || (it.type === 'building' && it.id === wall.buildingId));
 
         const handleClick = (e: any) => {
           if (mode === 'select') {
             e.cancelBubble = true;
-            setSelectedObject(wall.id, 'wall');
+            SelectionManager.handleSingleClick({ type: 'wall', id: wall.id }, e.evt);
           } else if (mode === 'addDoor' || mode === 'addWindow') {
             e.cancelBubble = true;
             const stage = e.target.getStage();
@@ -352,9 +359,8 @@ export const WallLayer: React.FC<Props> = ({ walls, scale, zoom = 1 }) => {
                const uiState = useUIStore.getState();
                const projStore = useProjectStore.getState();
                
-               if (!uiState.selectedItems.some(it => it.kind === 'wall' && it.wallId === wall.id)) {
-                  uiState.setSelectedItems([{ kind: 'wall', wallId: wall.id }]);
-                  uiState.setSelectedObject(wall.id, 'wall');
+               if (!uiState.selectedItems.some(it => it.type === 'wall' && it.id === wall.id)) {
+                  SelectionManager.handleSingleClick({ type: 'wall', id: wall.id }, e.evt);
                }
                
                projStore.startGroupDrag();

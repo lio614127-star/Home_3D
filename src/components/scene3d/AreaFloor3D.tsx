@@ -21,7 +21,10 @@ export const AreaFloor3D: React.FC<{ area: IArea, baseHeight: number, index?: nu
 
   if (!area.visible || !shape) return null;
 
-  const isSelected = selectedObjectId === area.id || selectedItems.some(it => it.kind === 'area' && it.areaId === area.id);
+  const uiState = useUIStore.getState();
+  const isSelected = selectedObjectId === area.id || 
+                     (area.buildingId && selectedObjectId === area.buildingId && uiState.selectedObjectType === 'building') || 
+                     uiState.selectedItems.some(it => (it.type === 'area' && it.id === area.id) || (it.type === 'building' && it.id === area.buildingId));
   // Default to floor color in 3D, don't use 2D area.color unless we want to map it. 
   // User requested white/default when not selected, and highlighted when selected.
   const color = isSelected ? theme.selected3DColor : theme.floor3DFill;

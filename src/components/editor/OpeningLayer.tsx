@@ -6,6 +6,7 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { IOpening, IWall } from '../../types';
 import { getOpeningCenter, projectToCanvas } from '../../core/geometry/math';
 import { useTheme } from '../../theme/tokens';
+import { SelectionManager } from '../../core/selection/SelectionManager';
 
 interface Props {
   openings: IOpening[];
@@ -35,7 +36,10 @@ export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale, zoom = 1
         const dz = wall.end.z - wall.start.z;
         const wallYaw = Math.atan2(dz, dx) * (180 / Math.PI); // degrees
         
-        const isSelected = selectedObjectId === opening.id || useUIStore.getState().selectedItems.some(it => it.kind === 'opening' && it.openingId === opening.id);
+        const uiState = useUIStore.getState();
+        const isSelected = selectedObjectId === opening.id || 
+                           (opening.buildingId && selectedObjectId === opening.buildingId && uiState.selectedObjectType === 'building') || 
+                           uiState.selectedItems.some(it => (it.type === 'opening' && it.id === opening.id) || (it.type === 'building' && it.id === opening.buildingId));
         const isDoor = opening.type === 'door';
         const color = '#ffffff'; // White background for opening
         const strokeColor = '#000000'; // Black stroke for CAD style
@@ -46,7 +50,7 @@ export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale, zoom = 1
         const handleClick = (e: any) => {
           if (mode === 'select') {
             e.cancelBubble = true;
-            setSelectedObject(opening.id, 'opening');
+            SelectionManager.handleSingleClick({ type: 'opening', id: opening.id }, e.evt);
           }
         };
 
@@ -113,7 +117,7 @@ export const OpeningLayer: React.FC<Props> = ({ openings, walls, scale, zoom = 1
             onDragStart={(e) => {
               e.cancelBubble = true;
               useProjectStore.getState().commitHistory();
-              setSelectedObject(opening.id, 'opening');
+              SelectionManager.handleSingleClick({ type: 'opening', id: opening.id }, e.evt);
             }}
             onDragMove={handleDragMove}
             onDragEnd={handleDragEnd}

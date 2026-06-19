@@ -4,6 +4,8 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { getWallLength, getWallEndFromLength, getPolygonArea, getAreaNetSize, normalizeCoord } from '../../core/geometry/math';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useTheme } from '../../theme/tokens';
+import { TransformPanel } from './TransformPanel';
+import { NumericInput } from './NumericInput';
 
 export const PropertiesPanel: React.FC = () => {
   const { selectedObjectId, selectedObjectType, selectedItems, showAreaName, showAreaArea } = useUIStore();
@@ -12,6 +14,9 @@ export const PropertiesPanel: React.FC = () => {
   const updateBuilding = useProjectStore(state => state.updateBuilding);
   const updateWall = useProjectStore(state => state.updateWall);
   const updateArea = useProjectStore(state => state.updateArea);
+  const addRoof = useProjectStore(state => state.addRoof);
+  const updateRoof = useProjectStore(state => state.updateRoof);
+  const deleteRoof = useProjectStore(state => state.deleteRoof);
   const { t } = useI18nStore();
   const theme = useTheme();
 
@@ -20,6 +25,7 @@ export const PropertiesPanel: React.FC = () => {
       <div style={{ padding: '15px', fontSize: '13px', boxSizing: 'border-box', width: '100%', color: theme.textPrimary }}>
         <h3 style={{ marginTop: 0 }}>Đã chọn {selectedItems.length} đối tượng</h3>
         <p style={{ color: theme.textSecondary }}>Sử dụng chuột để kéo thả toàn bộ nhóm trên bản vẽ.</p>
+        <TransformPanel items={selectedItems} />
       </div>
     );
   }
@@ -158,10 +164,10 @@ export const PropertiesPanel: React.FC = () => {
         <h3 style={{ marginTop: 0 }}>{t("object.site")}</h3>
         <p><strong>{t("field.id")}:</strong> {site.id}</p>
         <div style={{ marginBottom: '5px' }}>
-          <label>{t("field.width")}: <input type="number" value={site.width} onChange={e => updateSite({ width: parseFloat(e.target.value) || 0 })} style={{ width: '80px' }} /></label>
+          <label>{t("field.width")}: <NumericInput value={site.width} onChange={v => updateSite({ width: v })} allowNegative={false} style={{ width: '80px' }} /></label>
         </div>
         <div style={{ marginBottom: '5px' }}>
-          <label>{t("field.depth")}: <input type="number" value={site.depth} onChange={e => updateSite({ depth: parseFloat(e.target.value) || 0 })} style={{ width: '80px' }} /></label>
+          <label>{t("field.depth")}: <NumericInput value={site.depth} onChange={v => updateSite({ depth: v })} allowNegative={false} style={{ width: '80px' }} /></label>
         </div>
         <div style={{ marginBottom: '5px' }}>
           <label>{t("field.frontDir")}: <input type="text" value={site.frontDirection} onChange={e => updateSite({ frontDirection: e.target.value })} style={{ width: '80px' }} /></label>
@@ -170,35 +176,131 @@ export const PropertiesPanel: React.FC = () => {
     );
   }
 
-  if (selectedObjectType === 'building' && project.building.id === selectedObjectId) {
-    const b = project.building;
-    return (
-      <div style={{ padding: '10px', fontSize: '13px', color: theme.textPrimary }}>
-        <h3 style={{ marginTop: 0 }}>{t("object.building")}</h3>
-        <p><strong>{t("field.id")}:</strong> {b.id}</p>
-        <div style={{ marginBottom: '5px' }}>
-          <label>{t("field.originX")}: <input type="number" value={b.origin.x} onChange={e => updateBuilding({ origin: { ...b.origin, x: parseFloat(e.target.value) || 0 } })} style={{ width: '60px' }} /></label>
+  if (selectedObjectType === 'building') {
+    const b = project.buildings?.find(x => x.id === selectedObjectId);
+    if (b) {
+      return (
+        <div style={{ padding: '10px', fontSize: '13px', color: theme.textPrimary }}>
+          <h3 style={{ marginTop: 0 }}>{t("object.building")}</h3>
+          <p><strong>{t("field.id")}:</strong> {b.id}</p>
+          <div style={{ marginBottom: '5px' }}>
+            <label>Tên: <input type="text" value={b.name} onChange={e => updateBuilding({ id: b.id, name: e.target.value })} style={{ width: '100%', padding: '4px', boxSizing: 'border-box' }} /></label>
+          </div>
+          <div style={{ marginBottom: '5px' }}>
+            <label>Góc xoay: <NumericInput value={b.rotation} onChange={v => {
+              const delta = v - (b.rotation || 0);
+              if (delta !== 0) {
+                useProjectStore.getState().commitHistory();
+                useProjectStore.getState().rotateSelection([{ type: 'building', id: b.id }], delta);
+                updateBuilding({ id: b.id, rotation: v });
+              }
+            }} style={{ width: '100%', padding: '4px', boxSizing: 'border-box' }} /></label>
+          </div>
+          <button 
+            onClick={() => {
+              useProjectStore.getState().ungroupBuilding(b.id);
+            }} 
+            style={{ marginTop: '10px', width: '100%', padding: '6px', background: '#e53935', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+          >
+            Rã Tòa nhà (Ungroup)
+          </button>
+          
+          <hr style={{ margin: '15px 0', borderColor: '#eee' }} />
+          <h4 style={{ margin: '0 0 10px 0' }}>Hệ thống Mái</h4>
+          {(() => {
+            const roof = project.roofs?.find(r => r.buildingId === b.id);
+            if (!roof) {
+              return (
+                <button 
+                  onClick={() => {
+                    useProjectStore.getState().commitHistory();
+                    addRoof({
+                      id: `roof_${Date.now()}`,
+                      buildingId: b.id,
+                      type: 'flat',
+                      overhang: 0.6,
+                      elevation: 3.0,
+                      height: 0.2,
+                      angle: 30,
+                      visible: true,
+                      material: { type: 'concrete' }
+                    });
+                  }}
+                  style={{ width: '100%', padding: '6px', background: theme.accent, color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  Tạo Mái
+                </button>
+              );
+            }
+            return (
+              <div style={{ padding: '10px', background: 'rgba(0,0,0,0.02)', borderRadius: '4px', border: '1px solid #eee' }}>
+                <div style={{ marginBottom: '8px' }}>
+                  <label>Loại mái: 
+                    <select value={roof.type} onChange={e => updateRoof(roof.id, { type: e.target.value as any })} style={{ width: '100%', padding: '4px', marginTop: '4px' }}>
+                      <option value="flat">Mái bằng</option>
+                      <option value="japanese">Mái Nhật</option>
+                      <option value="thai">Mái Thái</option>
+                    </select>
+                  </label>
+                </div>
+                <div style={{ marginBottom: '8px' }}>
+                  <label>Overhang (m): <NumericInput value={roof.overhang} onChange={v => updateRoof(roof.id, { overhang: v })} allowNegative={false} style={{ width: '100%', padding: '4px', marginTop: '4px' }} /></label>
+                </div>
+                <div style={{ marginBottom: '8px' }}>
+                  <label>Độ cao đặt mái (m): <NumericInput value={roof.elevation} onChange={v => updateRoof(roof.id, { elevation: v })} style={{ width: '100%', padding: '4px', marginTop: '4px' }} /></label>
+                </div>
+                {roof.type === 'flat' ? (
+                  <div style={{ marginBottom: '8px' }}>
+                    <label>Độ dày/cao mái (m): <NumericInput value={roof.height ?? 0.2} onChange={v => updateRoof(roof.id, { height: v })} allowNegative={false} style={{ width: '100%', padding: '4px', marginTop: '4px' }} /></label>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ marginBottom: '8px' }}>
+                      <label>Độ dốc (Độ - °): <NumericInput value={roof.angle ?? 30} onChange={v => updateRoof(roof.id, { angle: v })} allowNegative={false} style={{ width: '100%', padding: '4px', marginTop: '4px' }} /></label>
+                    </div>
+                    <div style={{ marginBottom: '8px' }}>
+                      <label>Hướng chóp mái:
+                        <select value={roof.ridgeDirection || 'auto'} onChange={e => updateRoof(roof.id, { ridgeDirection: e.target.value as any })} style={{ width: '100%', padding: '4px', marginTop: '4px' }}>
+                          <option value="auto">Tự động (Auto)</option>
+                          <option value="horizontal">Nằm ngang (Horizontal)</option>
+                          <option value="vertical">Nằm dọc (Vertical)</option>
+                        </select>
+                      </label>
+                    </div>
+                  </>
+                )}
+                <div style={{ marginBottom: '8px' }}>
+                  <label>Màu sắc:
+                    <select value={roof.color || '#8b4513'} onChange={e => updateRoof(roof.id, { color: e.target.value })} style={{ width: '100%', padding: '4px', marginTop: '4px' }}>
+                      <option value="#8b4513">Đỏ ngói</option>
+                      <option value="#78909c">Xám</option>
+                      <option value="#1565c0">Xanh dương</option>
+                      <option value="#5d4037">Nâu</option>
+                      <option value="#bdbdbd">Bê tông</option>
+                    </select>
+                  </label>
+                </div>
+                <div style={{ marginBottom: '8px' }}>
+                  <label>Vật liệu (Texture):
+                    <select value={roof.material?.type || 'concrete'} onChange={e => updateRoof(roof.id, { material: { type: e.target.value as any } })} style={{ width: '100%', padding: '4px', marginTop: '4px' }}>
+                      <option value="concrete">Bê tông</option>
+                      <option value="tile">Ngói</option>
+                      <option value="metal">Tôn</option>
+                    </select>
+                  </label>
+                </div>
+                <button 
+                  onClick={() => deleteRoof(roof.id)}
+                  style={{ width: '100%', padding: '6px', background: '#fff', color: '#e53935', border: '1px solid #e53935', borderRadius: '4px', cursor: 'pointer', marginTop: '5px' }}
+                >
+                  Xóa Mái
+                </button>
+              </div>
+            );
+          })()}
         </div>
-        <div style={{ marginBottom: '5px' }}>
-          <label>{t("field.originZ")}: <input type="number" value={b.origin.z} onChange={e => updateBuilding({ origin: { ...b.origin, z: parseFloat(e.target.value) || 0 } })} style={{ width: '60px' }} /></label>
-        </div>
-        <div style={{ marginBottom: '5px' }}>
-          <label>{t("field.width")}: <input type="number" value={b.width} onChange={e => updateBuilding({ width: parseFloat(e.target.value) || 0 })} style={{ width: '60px' }} /></label>
-        </div>
-        <div style={{ marginBottom: '5px' }}>
-          <label>{t("field.depth")}: <input type="number" value={b.depth} onChange={e => updateBuilding({ depth: parseFloat(e.target.value) || 0 })} style={{ width: '60px' }} /></label>
-        </div>
-        <div style={{ marginBottom: '5px' }}>
-          <label>{t("field.floorHeight")}: <input type="number" value={b.floorHeight} onChange={e => updateBuilding({ floorHeight: parseFloat(e.target.value) || 0 })} style={{ width: '60px' }} /></label>
-        </div>
-        <div style={{ marginBottom: '5px' }}>
-          <label>{t("field.wallHeight")}: <input type="number" value={b.wallHeight} onChange={e => updateBuilding({ wallHeight: parseFloat(e.target.value) || 0 })} style={{ width: '60px' }} /></label>
-        </div>
-        <div style={{ marginBottom: '5px' }}>
-          <label>{t("field.wallThickness")}: <input type="number" value={b.wallThickness} onChange={e => updateBuilding({ wallThickness: parseFloat(e.target.value) || 0 })} style={{ width: '60px' }} /></label>
-        </div>
-      </div>
-    );
+      );
+    }
   }
 
   if (selectedObjectType === 'wall') {
@@ -218,27 +320,27 @@ export const PropertiesPanel: React.FC = () => {
         <p style={{ marginBottom: '10px' }}><strong>{t("field.id")}:</strong> {wall.id}</p>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.startX")}</label>
-          <input type="number" value={wall.start.x} onChange={e => updateWall(wall.id, { start: { ...wall.start, x: parseFloat(e.target.value) || 0 } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+          <NumericInput value={wall.start.x} onChange={v => updateWall(wall.id, { start: { ...wall.start, x: v } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
         </div>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.startZ")}</label>
-          <input type="number" value={wall.start.z} onChange={e => updateWall(wall.id, { start: { ...wall.start, z: parseFloat(e.target.value) || 0 } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+          <NumericInput value={wall.start.z} onChange={v => updateWall(wall.id, { start: { ...wall.start, z: v } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
         </div>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.endX")}</label>
-          <input type="number" value={wall.end.x} onChange={e => updateWall(wall.id, { end: { ...wall.end, x: parseFloat(e.target.value) || 0 } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+          <NumericInput value={wall.end.x} onChange={v => updateWall(wall.id, { end: { ...wall.end, x: v } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
         </div>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.endZ")}</label>
-          <input type="number" value={wall.end.z} onChange={e => updateWall(wall.id, { end: { ...wall.end, z: parseFloat(e.target.value) || 0 } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+          <NumericInput value={wall.end.z} onChange={v => updateWall(wall.id, { end: { ...wall.end, z: v } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
         </div>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.thickness")}</label>
-          <input type="number" value={wall.thickness} onChange={e => updateWall(wall.id, { thickness: parseFloat(e.target.value) || 0 })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+          <NumericInput value={wall.thickness} onChange={v => updateWall(wall.id, { thickness: v })} allowNegative={false} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
         </div>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.height")}</label>
-          <input type="number" value={wall.height} onChange={e => updateWall(wall.id, { height: parseFloat(e.target.value) || 0 })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+          <NumericInput value={wall.height} onChange={v => updateWall(wall.id, { height: v })} allowNegative={false} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
         </div>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>Căn lề</label>
@@ -252,6 +354,7 @@ export const PropertiesPanel: React.FC = () => {
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.length")}</label>
           <input type="number" value={length.toFixed(2)} onChange={handleLengthChange} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px', fontWeight: 'bold' }} />
         </div>
+        <TransformPanel items={selectedItems} />
       </div>
     );
   }
@@ -382,6 +485,7 @@ export const PropertiesPanel: React.FC = () => {
         <div style={{ marginTop: '15px' }}>
           <p><strong>{t("field.area")}:</strong> {areaValue.toFixed(2)} m²</p>
         </div>
+        <TransformPanel items={selectedItems} />
       </div>
     );
   }
@@ -401,19 +505,19 @@ export const PropertiesPanel: React.FC = () => {
         </div>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.offsetFromStart")}</label>
-          <input type="number" step="0.1" value={opening.offsetFromStart} onChange={e => updateOpening(opening.id, { offsetFromStart: parseFloat(e.target.value) || 0 })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+          <NumericInput value={opening.offsetFromStart} onChange={v => updateOpening(opening.id, { offsetFromStart: v })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
         </div>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.width")}</label>
-          <input type="number" step="0.1" value={opening.width} onChange={e => updateOpening(opening.id, { width: parseFloat(e.target.value) || 0 })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+          <NumericInput value={opening.width} onChange={v => updateOpening(opening.id, { width: v })} allowNegative={false} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
         </div>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.height")}</label>
-          <input type="number" step="0.1" value={opening.height} onChange={e => updateOpening(opening.id, { height: parseFloat(e.target.value) || 0 })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+          <NumericInput value={opening.height} onChange={v => updateOpening(opening.id, { height: v })} allowNegative={false} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
         </div>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.sillHeight")}</label>
-          <input type="number" step="0.1" value={opening.sillHeight} onChange={e => updateOpening(opening.id, { sillHeight: parseFloat(e.target.value) || 0 })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+          <NumericInput value={opening.sillHeight} onChange={v => updateOpening(opening.id, { sillHeight: v })} allowNegative={false} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
         </div>
         {opening.type === 'door' && (
           <>
@@ -433,7 +537,7 @@ export const PropertiesPanel: React.FC = () => {
             </div>
             <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
               <label style={{ marginBottom: '4px', fontWeight: '500' }}>{t("field.swingAngle")}</label>
-              <input type="number" value={opening.swingAngle} onChange={e => updateOpening(opening.id, { swingAngle: parseFloat(e.target.value) || 0 })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+              <NumericInput value={opening.swingAngle || 90} onChange={v => updateOpening(opening.id, { swingAngle: v })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
             </div>
           </>
         )}

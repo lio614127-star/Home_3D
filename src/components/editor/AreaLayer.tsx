@@ -7,6 +7,7 @@ import { useUIStore } from '../../store/useUIStore';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useTheme } from '../../theme/tokens';
 import { useI18nStore } from '../../store/useI18nStore';
+import { SelectionManager } from '../../core/selection/SelectionManager';
 
 interface Props {
   scale: number;
@@ -79,7 +80,7 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale, zoom = 1 }) => {
         const exactP = { x: Number(bestProj.x.toFixed(4)), z: Number(bestProj.z.toFixed(4)) };
         useProjectStore.getState().commitHistory();
         insertAreaPoint(area.id, bestEdgeIndex, exactP);
-        setSelectedObject(area.id, 'area');
+        SelectionManager.handleSingleClick({ type: 'area', id: area.id }, false);
         return true;
       }
     }
@@ -91,7 +92,10 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale, zoom = 1 }) => {
       {areas.map((area, index) => {
         if (!area.visible) return null;
         
-        const isSelected = selectedObjectId === area.id || useUIStore.getState().selectedItems.some(it => it.kind === 'area' && it.areaId === area.id);
+        const uiState = useUIStore.getState();
+        const isSelected = selectedObjectId === area.id || 
+                           (area.buildingId && selectedObjectId === area.buildingId && uiState.selectedObjectType === 'building') || 
+                           uiState.selectedItems.some(it => (it.type === 'area' && it.id === area.id) || (it.type === 'building' && it.id === area.buildingId));
         const flatPoints = area.points.flatMap(p => [p.x * scale, p.z * scale]);
         const areaValue = getAreaNetSize(area, projectData.walls);
         const centroid = getPolygonCentroid(area.points);
@@ -117,7 +121,7 @@ export const AreaLayer: React.FC<Props> = ({ areas, scale, zoom = 1 }) => {
               // Left click: select
               if (e.evt.button === 0) {
                 e.cancelBubble = true;
-                setSelectedObject(area.id, 'area');
+                SelectionManager.handleSingleClick({ type: 'area', id: area.id }, e.evt);
               }
             }}
             onContextMenu={(e: any) => {
@@ -211,7 +215,10 @@ export const AreaHandles: React.FC<Props & { areas: IArea[] }> = ({ areas, scale
     <Group listening={isSelectMode}>
       {areas.map((area) => {
         if (!area.visible) return null;
-        const isSelected = selectedObjectId === area.id || useUIStore.getState().selectedItems.some(it => it.kind === 'area' && it.areaId === area.id);
+        const uiState = useUIStore.getState();
+        const isSelected = selectedObjectId === area.id || 
+                           (area.buildingId && selectedObjectId === area.buildingId && uiState.selectedObjectType === 'building') || 
+                           uiState.selectedItems.some(it => (it.type === 'area' && it.id === area.id) || (it.type === 'building' && it.id === area.buildingId));
         
         if (!isSelected || !isSelectMode) return null;
 

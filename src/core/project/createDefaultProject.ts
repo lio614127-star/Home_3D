@@ -18,19 +18,7 @@ export const createDefaultProject = (): IProject => {
       visible: true,
       locked: true
     },
-    building: {
-      id: "building_1",
-      width: 12,
-      depth: 10,
-      origin: { x: 4.5, y: 0, z: 5 },
-      anchor: "front_left_corner",
-      floorHeight: 0.6,
-      wallHeight: 3.6,
-      wallThickness: 0.2,
-      layer: "walls",
-      visible: false,
-      locked: false
-    },
+    buildings: [],
     levels: [
       {
         id: "level_1",

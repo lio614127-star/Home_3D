@@ -5,6 +5,7 @@ import { projectToCanvas, formatArea, subtractOverlappingWalls } from '../../cor
 import { useUIStore } from '../../store/useUIStore';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useI18nStore } from '../../store/useI18nStore';
+import { SelectionManager } from '../../core/selection/SelectionManager';
 
 import { useTheme } from '../../theme/tokens';
 
@@ -29,7 +30,7 @@ export const SiteLayer: React.FC<Props> = ({ site, scale, zoom = 1 }) => {
   const handleClick = (e: any) => {
     if (mode === 'select') {
       e.cancelBubble = true;
-      setSelectedObject(site.id, 'site');
+      SelectionManager.handleSingleClick({ type: 'site', id: site.id }, e.evt);
     }
   };
 
@@ -42,7 +43,7 @@ export const SiteLayer: React.FC<Props> = ({ site, scale, zoom = 1 }) => {
       onMouseDown={(e: any) => {
         if (mode === 'select' && e.evt.button === 0) {
           e.cancelBubble = true;
-          setSelectedObject(site.id, 'site');
+          SelectionManager.handleSingleClick({ type: 'site', id: site.id }, e.evt);
         }
       }}
     >

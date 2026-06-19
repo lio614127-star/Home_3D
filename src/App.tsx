@@ -46,6 +46,11 @@ function App() {
     setValidationIssues(result.issues);
   }, [project, setValidationIssues]);
 
+  // Expose store to window for easy DevTools testing
+  useEffect(() => {
+    (window as any).useProjectStore = useProjectStore;
+  }, []);
+
   // Keyboard shortcut for Delete
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

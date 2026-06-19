@@ -7,11 +7,12 @@ import { useI18nStore } from '../../store/useI18nStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useTheme } from '../../theme/tokens';
+import { SelectionManager } from '../../core/selection/SelectionManager';
 
 interface Props {
   walls: IWall[];
   areas?: IArea[];
-  building?: IBuilding;
+  buildings?: IBuilding[];
   scale: number;
   zoom?: number;
 }
@@ -279,7 +280,7 @@ export const DimensionCAD: React.FC<DimensionProps> = ({ start, end, offsetDist,
   );
 };
 
-export const DimensionLayer: React.FC<Props> = ({ walls, areas, building, scale, zoom = 1 }) => {
+export const DimensionLayer: React.FC<Props> = ({ walls, areas = [], buildings = [], scale, zoom = 1 }) => {
   const { showManualDimensions, selectedObjectId, setSelectedObject, mode, snapToGrid, snapToPoints, gridMinorStep, snapTolerancePx, showAlignmentGuides, setActiveGuides, setActiveSnapPoint } = useUIStore();
   const annotations = useProjectStore(state => state.data.annotations || []);
   const theme = useTheme();
@@ -306,10 +307,10 @@ export const DimensionLayer: React.FC<Props> = ({ walls, areas, building, scale,
             zoom={zoom}
             color={theme.dimensionStroke}
             isManual={true}
-            isSelected={selectedObjectId === dim.id || useUIStore.getState().selectedItems.some(it => it.kind === 'dimension' && it.annotationId === dim.id)}
+            isSelected={selectedObjectId === dim.id || useUIStore.getState().selectedItems.some(it => it.type === 'dimension' && it.id === dim.id)}
             onClick={(e) => {
               e.cancelBubble = true;
-              setSelectedObject(dim.id, 'dimension');
+              SelectionManager.handleSingleClick({ type: 'dimension', id: dim.id }, e.evt);
             }}
             onOffsetChange={(dist) => {
                useProjectStore.getState().updateAnnotation(dim.id, { offsetDistance: dist });

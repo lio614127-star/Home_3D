@@ -20,7 +20,10 @@ export const Wall3D: React.FC<Props> = ({ wall, allWalls, baseHeight, openings =
 
   if (!wall.visible || !poly) return null;
 
-  const isSelected = selectedObjectId === wall.id;
+  const uiState = useUIStore.getState();
+  const isSelected = selectedObjectId === wall.id || 
+                     (wall.buildingId && selectedObjectId === wall.buildingId && uiState.selectedObjectType === 'building') || 
+                     uiState.selectedItems.some(it => (it.type === 'wall' && it.id === wall.id) || (it.type === 'building' && it.id === wall.buildingId));
   const matColor = isSelected ? theme.selected3DColor : theme.wall3DFill;
   const t = (wall.thickness || 0.2) / 2;
 

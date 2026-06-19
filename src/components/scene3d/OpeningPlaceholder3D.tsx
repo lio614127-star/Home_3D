@@ -106,7 +106,10 @@ export const OpeningPlaceholder3D: React.FC<{ opening: IOpening, wall: IWall, ba
   const center = getOpeningCenter(wall, opening.offsetFromStart, opening.width);
   if (!center) return null;
 
-  const isSelected = selectedObjectId === opening.id;
+  const uiState = useUIStore.getState();
+  const isSelected = selectedObjectId === opening.id || 
+                     (opening.buildingId && selectedObjectId === opening.buildingId && uiState.selectedObjectType === 'building') || 
+                     uiState.selectedItems.some(it => (it.type === 'opening' && it.id === opening.id) || (it.type === 'building' && it.id === opening.buildingId));
 
   if (opening.type === 'door') {
     return <Door3D opening={opening} wall={wall} baseHeight={baseHeight} center={center} isSelected={isSelected} />;

@@ -5,10 +5,11 @@ import { Canvas } from '@react-three/fiber';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useUIStore } from '../../store/useUIStore';
 import { SitePlane3D } from './SitePlane3D';
-import { BuildingFloor3D } from './BuildingFloor3D';
+// import { BuildingFloor3D } from './BuildingFloor3D';
 import { Wall3D } from './Wall3D';
 import { AreaFloor3D } from './AreaFloor3D';
 import { OpeningPlaceholder3D } from './OpeningPlaceholder3D';
+import { Roof3D } from './Roof3D';
 import { CameraControls3D } from './CameraControls3D';
 import { useTheme } from '../../theme/tokens';
 
@@ -61,7 +62,7 @@ export const Scene3D: React.FC = () => {
   const cx = project.site.width / 2 || 0;
   const cz = project.site.depth / 2 || 0;
   const theme = useTheme();
-  const effectiveBaseHeight = project.building.visible ? project.building.floorHeight : 0;
+  const effectiveBaseHeight = 0;
 
   return (
     <div style={{ width: '100%', height: '100%', background: theme.scene3dBg }}>
@@ -85,7 +86,7 @@ export const Scene3D: React.FC = () => {
         <Suspense fallback={null}>
           {show3DGrid && <RectangularGrid3D width={WORKSPACE_WIDTH} depth={WORKSPACE_DEPTH} />}
           {show3DSite && <SitePlane3D site={project.site} />}
-          <BuildingFloor3D building={project.building} />
+          {/* <BuildingFloor3D building={project.building} /> */}
           
           {show3DWalls && project.walls.map(wall => {
             const wallOpenings = (project.openings || []).filter(o => o.wallId === wall.id);
@@ -127,6 +128,13 @@ export const Scene3D: React.FC = () => {
               }
             });
             return <OpeningPlaceholder3D key={opening.id} opening={opening} wall={wall} baseHeight={wallBaseHeight} />;
+          })}
+
+          {(project.roofs || []).map(roof => {
+            if (!roof.visible) return null;
+            const building = project.buildings.find(b => b.id === roof.buildingId);
+            if (!building) return null;
+            return <Roof3D key={roof.id} roof={roof} building={building} />;
           })}
         </Suspense>
       </Canvas>
