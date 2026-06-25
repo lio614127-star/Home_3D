@@ -42,6 +42,8 @@ export interface ThemeTokens {
   door3DColor: string;
   window3DColor: string;
   selected3DColor: string;
+  structureStroke: string;
+  structureFill: string;
 }
 
 export const lightTheme: ThemeTokens = {
@@ -83,6 +85,8 @@ export const lightTheme: ThemeTokens = {
   door3DColor: '#8d6e63',
   window3DColor: '#90caf9',
   selected3DColor: '#ffb74d',
+  structureStroke: '#795548',
+  structureFill: '#d7ccc8',
 };
 
 export const darkTheme: ThemeTokens = {
@@ -124,6 +128,8 @@ export const darkTheme: ThemeTokens = {
   door3DColor: '#7c4a32',
   window3DColor: '#7dd3fc',
   selected3DColor: '#facc15',
+  structureStroke: '#a18072',
+  structureFill: '#5d4037',
 };
 
 export const themes: Record<ThemeMode, ThemeTokens> = {

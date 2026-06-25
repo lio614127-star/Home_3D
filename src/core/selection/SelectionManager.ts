@@ -17,6 +17,8 @@ export class SelectionManager {
     else if (item.type === 'dimension' || item.type === 'dimensionEndpoint') obj = project.annotations?.find(a => a.id === item.id);
     else if (item.type === 'building') obj = project.buildings?.find(b => b.id === item.id);
     else if (item.type === 'site') obj = project.site;
+    else if (item.type === 'structure' || item.type === 'fenceVertex') obj = project.structures?.find(s => s.id === item.id);
+    else if (item.type === 'asset') obj = project.placedAssets?.find(a => a.id === item.id);
 
     if (obj && (obj.locked || obj.selectable === false)) {
       if (!isMultiSelect) {
@@ -81,6 +83,8 @@ export class SelectionManager {
       this.selectAreasAndVertices(project, rect, items, isLeftToRight);
       this.selectOpenings(project, rect, items, isLeftToRight);
       this.selectDimensionsAndEndpoints(project, rect, items, isLeftToRight);
+      this.selectStructures(project, rect, items, isLeftToRight);
+      this.selectAssets(project, rect, items, isLeftToRight);
 
       const deduped = this.deduplicateItems(items, project);
 
@@ -113,6 +117,7 @@ export class SelectionManager {
     if (type === 'wallEndpoint') return 'wall';
     if (type === 'areaVertex') return 'area';
     if (type === 'dimensionEndpoint') return 'dimension';
+    if (type === 'fenceVertex') return 'structure';
     return type;
   }
 
@@ -191,6 +196,57 @@ export class SelectionManager {
          items.push({ type: 'dimensionEndpoint', id: dim.id, endpoint: 'end' });
       } else if (!isLeftToRight && rectIntersectsSegment(rect, dim.start, dim.end)) {
          items.push({ type: 'dimension', id: dim.id });
+      }
+    });
+  }
+
+  private static selectStructures(project: IProject, rect: RectProject, items: SelectedItem[], isLeftToRight: boolean) {
+    const structures = project.structures || [];
+    structures.forEach(s => {
+      if (s.locked || !s.visible || s.selectable === false) return;
+      if (s.type === 'fence') {
+        let allIn = true;
+        s.path.forEach(pt => {
+          if (!rectContainsPoint(rect, pt)) allIn = false;
+        });
+        if (allIn || (!isLeftToRight && s.path.some(pt => rectContainsPoint(rect, pt)))) {
+          items.push({ type: 'structure', id: s.id });
+        }
+      } else {
+        const cx = s.position.x;
+        const cz = s.position.z;
+        const w = s.dimensions.width;
+        const d = s.dimensions.depth;
+        const sRect: RectProject = { minX: cx - w/2, maxX: cx + w/2, minZ: cz - d/2, maxZ: cz + d/2 };
+        
+        if (rect.minX <= sRect.minX && rect.maxX >= sRect.maxX && rect.minZ <= sRect.minZ && rect.maxZ >= sRect.maxZ) {
+          items.push({ type: 'structure', id: s.id });
+        } else if (!isLeftToRight) {
+           // Basic intersection check
+           if (!(rect.minX > sRect.maxX || rect.maxX < sRect.minX || rect.minZ > sRect.maxZ || rect.maxZ < sRect.minZ)) {
+             items.push({ type: 'structure', id: s.id });
+           }
+        }
+      }
+    });
+  }
+
+  private static selectAssets(project: IProject, rect: RectProject, items: SelectedItem[], isLeftToRight: boolean) {
+    const assets = project.placedAssets || [];
+    assets.forEach(a => {
+      if (a.locked || !a.visible || a.selectable === false) return;
+      const cx = a.position.x;
+      const cz = a.position.z;
+      const w = a.scale?.x || 1;
+      const d = a.scale?.z || 1;
+      const sRect: RectProject = { minX: cx - w/2, maxX: cx + w/2, minZ: cz - d/2, maxZ: cz + d/2 };
+      
+      if (rect.minX <= sRect.minX && rect.maxX >= sRect.maxX && rect.minZ <= sRect.minZ && rect.maxZ >= sRect.maxZ) {
+        items.push({ type: 'asset', id: a.id });
+      } else if (!isLeftToRight) {
+         if (!(rect.minX > sRect.maxX || rect.maxX < sRect.minX || rect.minZ > sRect.maxZ || rect.maxZ < sRect.minZ)) {
+           items.push({ type: 'asset', id: a.id });
+         }
       }
     });
   }

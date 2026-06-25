@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { IProject, ISite, IBuilding, IWall, IArea, IOpening, SelectedItem, IRoof } from '../types';
+import { IProject, ISite, IBuilding, IWall, IArea, IOpening, SelectedItem, IRoof, Structure, IPlacedAsset } from '../types';
 import { buildAreaConstraints, resolveAreaConstraints } from '../core/geometry/constraints';
 import { createDefaultProject } from '../core/project/createDefaultProject';
 import { rotatePoint, getCentroid, getBoundingBox } from '../core/geometry/transform';
 import { getWallEndFromLength, computeBuildingFootprint } from '../core/geometry/math';
+import { getAssetDefinition } from '../core/assets/catalog';
 
 function recomputeBuildingFootprints(data: IProject, buildingIds: Set<string>) {
   buildingIds.forEach(bId => {
@@ -29,6 +30,7 @@ interface ProjectState {
   updateWall: (id: string, updates: Partial<IWall>) => void;
   updateConnectedWallEndpoints: (updates: { wallId: string; type: 'start' | 'end'; point: { x: number; z: number } }[]) => void;
   deleteWall: (id: string) => void;
+  splitWall: (id: string, splitPoint: Vector2) => void;
   addArea: (area: IArea) => void;
   updateArea: (id: string, updates: Partial<IArea>) => void;
   insertAreaPoint: (id: string, edgeIndex: number, point: { x: number; z: number }) => void;
@@ -42,6 +44,15 @@ interface ProjectState {
   addAnnotation: (annotation: any) => void;
   updateAnnotation: (id: string, updates: any) => void;
   deleteAnnotation: (id: string) => void;
+  addStructure: (structure: Structure) => void;
+  updateStructure: (id: string, updates: Partial<Structure>) => void;
+  deleteStructure: (id: string) => void;
+  addPlacedAsset: (asset: IPlacedAsset) => void;
+  updatePlacedAsset: (id: string, updates: Partial<IPlacedAsset>) => void;
+  deletePlacedAsset: (id: string) => void;
+  addAIRequest: (request: Partial<IAIRequest> & { type: IAIRequest['type'], category: string }) => void;
+  updateAIRequest: (id: string, updates: Partial<IAIRequest>) => void;
+  deleteAIRequest: (id: string) => void;
 
   translateSelection: (selection: SelectedItem[], deltaX: number, deltaZ: number) => void;
   rotateSelection: (selection: SelectedItem[], angleDegrees: number, pivot?: {x: number, z: number}) => void;
@@ -70,6 +81,8 @@ function expandSelection(selection: SelectedItem[], data: IProject): SelectedIte
       data.areas.forEach(a => { if (a.buildingId === item.id) expanded.push({ id: a.id, type: 'area' }); });
       (data.openings || []).forEach(o => { if (o.buildingId === item.id) expanded.push({ id: o.id, type: 'opening' }); });
       (data.annotations || []).forEach(an => { if (an.buildingId === item.id) expanded.push({ id: an.id, type: 'dimension' }); });
+      (data.structures || []).forEach(s => { if (s.buildingId === item.id) expanded.push({ id: s.id, type: 'structure' }); });
+      (data.placedAssets || []).forEach(a => { if (a.buildingId === item.id) expanded.push({ id: a.id, type: 'asset' }); });
     } else {
       expanded.push(item);
     }
@@ -168,6 +181,20 @@ export const useProjectStore = create<ProjectState>()(
               dim.end.x += deltaX; dim.end.z += deltaZ;
            }
         }
+      } else if (item.type === 'structure') {
+        const s = newData.structures?.find(s => s.id === item.id);
+        if (s) {
+          if (s.type === 'fence') {
+            s.path.forEach(p => { p.x += deltaX; p.z += deltaZ; });
+          } else {
+            s.position.x += deltaX; s.position.z += deltaZ;
+          }
+        }
+      } else if (item.type === 'asset') {
+        const a = newData.placedAssets?.find(a => a.id === item.id);
+        if (a) {
+          a.position.x += deltaX; a.position.z += deltaZ;
+        }
       }
       // Note: Openings are constrained to walls. If a wall moves, its openings implicitly move in 2D/3D (handled by render logic or offset).
       // If ONLY opening is dragged along the wall, that requires a different logic (projecting delta onto wall axis).
@@ -242,6 +269,20 @@ export const useProjectStore = create<ProjectState>()(
               dim.end.x += deltaX; dim.end.z += deltaZ;
            }
         }
+      } else if (item.type === 'structure') {
+        const s = newData.structures?.find(x => x.id === item.id);
+        if (s && !s.locked) {
+          if (s.type === 'fence') {
+            s.path.forEach(p => { p.x += deltaX; p.z += deltaZ; });
+          } else {
+            s.position.x += deltaX; s.position.z += deltaZ;
+          }
+        }
+      } else if (item.type === 'asset') {
+        const a = newData.placedAssets?.find(x => x.id === item.id);
+        if (a && !a.locked) {
+          a.position.x += deltaX; a.position.z += deltaZ;
+        }
       }
     });
     return { data: newData };
@@ -261,6 +302,15 @@ export const useProjectStore = create<ProjectState>()(
         } else if (item.type === 'area') {
           const a = newData.areas.find(a => a.id === item.id);
           if (a) { pointsToConsider.push(...a.points); }
+        } else if (item.type === 'structure') {
+          const s = newData.structures?.find(x => x.id === item.id);
+          if (s) {
+            if (s.type === 'fence') pointsToConsider.push(...s.path);
+            else pointsToConsider.push(s.position);
+          }
+        } else if (item.type === 'asset') {
+          const a = newData.placedAssets?.find(x => x.id === item.id);
+          if (a) pointsToConsider.push(a.position);
         }
       });
       pivot = getCentroid(pointsToConsider) || { x: 0, z: 0 };
@@ -285,10 +335,82 @@ export const useProjectStore = create<ProjectState>()(
             newData.site.origin = rotatePoint(newData.site.origin, pivot!, angleDegrees);
             newData.site.rotation = ((newData.site.rotation || 0) + angleDegrees) % 360;
          }
+        } else if (item.type === 'structure') {
+        const s = newData.structures?.find(x => x.id === item.id);
+        if (s && !s.locked) {
+          if (s.type === 'fence') {
+             s.path = s.path.map(p => rotatePoint(p, pivot!, angleDegrees));
+          } else {
+             s.position = rotatePoint(s.position, pivot!, angleDegrees);
+             s.rotation = ((s.rotation || 0) + angleDegrees) % 360;
+          }
+        }
+      } else if (item.type === 'asset') {
+        const a = newData.placedAssets?.find(x => x.id === item.id);
+        if (a && !a.locked) {
+          a.position = rotatePoint(a.position, pivot!, angleDegrees);
+          a.rotation = ((a.rotation || 0) + angleDegrees) % 360;
+        }
       }
     });
     
     return { data: newData };
+  }),
+
+
+
+  splitWall: (id: string, splitPoint: Vector2) => set((state) => {
+    const wall = state.data.walls.find(w => w.id === id);
+    if (!wall) return state;
+
+    const newWall: IWall = {
+      ...wall,
+      id: crypto.randomUUID(),
+      start: splitPoint
+    };
+
+    const updatedOldWall = { ...wall, end: splitPoint };
+
+    return {
+      data: {
+        ...state.data,
+        walls: [...state.data.walls.filter(w => w.id !== id), updatedOldWall, newWall]
+      }
+    };
+  }),
+
+  addAIRequest: (request) => set((state) => {
+    const newReq: IAIRequest = {
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...request
+    } as IAIRequest;
+    return {
+      data: {
+        ...state.data,
+        aiRequests: [...(state.data.aiRequests || []), newReq]
+      }
+    };
+  }),
+
+  updateAIRequest: (id, updates) => set((state) => {
+    return {
+      data: {
+        ...state.data,
+        aiRequests: state.data.aiRequests?.map(req => req.id === id ? { ...req, ...updates, updatedAt: Date.now() } : req) || []
+      }
+    };
+  }),
+
+  deleteAIRequest: (id: string) => set((state) => {
+    useProjectStore.getState().commitHistory();
+    return {
+      data: {
+        ...state.data,
+        aiRequests: state.data.aiRequests?.filter(req => req.id !== id) || []
+      }
+    };
   }),
 
   duplicateSelection: (selection) => {
@@ -302,6 +424,8 @@ export const useProjectStore = create<ProjectState>()(
       const areasToClone: IArea[] = [];
       const openingsToClone: IOpening[] = [];
       const buildingsToClone: IBuilding[] = [];
+      const structuresToClone: Structure[] = [];
+      const assetsToClone: IPlacedAsset[] = [];
 
       for (const item of selection) {
         if (item.type === 'building') {
@@ -322,6 +446,12 @@ export const useProjectStore = create<ProjectState>()(
         } else if (item.type === 'opening') {
           const o = newData.openings.find(x => x.id === item.id);
           if (o) openingsToClone.push(o);
+        } else if (item.type === 'structure') {
+          const s = newData.structures?.find(x => x.id === item.id);
+          if (s) structuresToClone.push(s);
+        } else if (item.type === 'asset') {
+          const a = newData.placedAssets?.find(x => x.id === item.id);
+          if (a) assetsToClone.push(a);
         }
       }
 
@@ -403,9 +533,56 @@ export const useProjectStore = create<ProjectState>()(
         };
       });
 
+      const newStructures = structuresToClone.map(s => {
+        const newId = genId('structure');
+        idsMap.set(s.id, newId);
+        if (selection.find(sel => sel.id === s.id)) {
+          newSelection.push({ id: newId, type: 'structure' });
+        }
+        if (s.type === 'fence') {
+          return {
+            ...s,
+            id: newId,
+            buildingId: s.buildingId ? buildingIdMap.get(s.buildingId) || s.buildingId : undefined,
+            path: s.path.map(p => ({ x: p.x + dx, z: p.z + dz }))
+          };
+        }
+        return {
+          ...s,
+          id: newId,
+          buildingId: s.buildingId ? buildingIdMap.get(s.buildingId) || s.buildingId : undefined,
+          position: { x: s.position.x + dx, z: s.position.z + dz }
+        };
+      });
+
+      const newAssets = assetsToClone.map(a => {
+        const newId = genId('asset');
+        idsMap.set(a.id, newId);
+        if (selection.find(sel => sel.id === a.id)) {
+          newSelection.push({ id: newId, type: 'asset' });
+        }
+        
+        // Smart duplicate offset for assets
+        const def = getAssetDefinition(a.assetId);
+        let assetDx = dx;
+        if (def) {
+          const width = (a.scale?.x || 1) * def.defaultSize.width;
+          assetDx = width + 0.2; // width + 0.2m gap
+        }
+
+        return {
+          ...a,
+          id: newId,
+          buildingId: a.buildingId ? buildingIdMap.get(a.buildingId) || a.buildingId : undefined,
+          position: { x: a.position.x + assetDx, y: a.position.y, z: a.position.z } // Offset X only
+        };
+      });
+
       newData.walls.push(...newWalls);
       newData.areas.push(...newAreas);
       newData.openings.push(...newOpenings);
+      if (newData.structures) newData.structures.push(...newStructures as any[]);
+      if (newData.placedAssets) newData.placedAssets.push(...newAssets as any[]);
 
       return { data: newData };
     });
@@ -433,6 +610,30 @@ export const useProjectStore = create<ProjectState>()(
           const startPt = getWallEndFromLength(w.start, w.end, o.offsetFromStart);
           const endPt = getWallEndFromLength(startPt, w.end, o.width);
           points = [startPt, endPt];
+        }
+      } else if (item.type === 'structure') {
+        const s = newData.structures?.find(x => x.id === item.id);
+        if (s) {
+          if (s.type === 'fence') points = s.path;
+          else {
+            const w2 = s.dimensions.width / 2;
+            const d2 = s.dimensions.depth / 2;
+            // approximate bounding box
+            points = [
+              { x: s.position.x - w2, z: s.position.z - d2 },
+              { x: s.position.x + w2, z: s.position.z + d2 }
+            ];
+          }
+        }
+      } else if (item.type === 'asset') {
+        const a = newData.placedAssets?.find(x => x.id === item.id);
+        if (a) {
+          const w2 = a.scale.x / 2; // rough approximation using scale as dimension
+          const d2 = a.scale.z / 2;
+          points = [
+            { x: a.position.x - w2, z: a.position.z - d2 },
+            { x: a.position.x + w2, z: a.position.z + d2 }
+          ];
         }
       }
       
@@ -487,6 +688,20 @@ export const useProjectStore = create<ProjectState>()(
             if (dx !== 0) o.offsetFromStart += dx * Math.sign(w.end.x - w.start.x || 1);
             else if (dz !== 0) o.offsetFromStart += dz * Math.sign(w.end.z - w.start.z || 1);
           }
+        } else if (item.type === 'structure') {
+          const s = newData.structures?.find(x => x.id === item.id);
+          if (s && !s.locked) {
+            if (s.type === 'fence') {
+              s.path.forEach(p => { p.x += dx; p.z += dz; });
+            } else {
+              s.position.x += dx; s.position.z += dz;
+            }
+          }
+        } else if (item.type === 'asset') {
+          const a = newData.placedAssets?.find(x => x.id === item.id);
+          if (a && !a.locked) {
+            a.position.x += dx; a.position.z += dz;
+          }
         }
       }
     }
@@ -505,6 +720,19 @@ export const useProjectStore = create<ProjectState>()(
       } else if (item.type === 'area') {
         const a = newData.areas.find(x => x.id === item.id);
         if (a && !a.locked) { points = a.points; refObj = a; }
+      } else if (item.type === 'structure') {
+        const s = newData.structures?.find(x => x.id === item.id);
+        if (s && !s.locked) {
+          if (s.type === 'fence') points = s.path;
+          else points = [s.position];
+          refObj = s;
+        }
+      } else if (item.type === 'asset') {
+        const a = newData.placedAssets?.find(x => x.id === item.id);
+        if (a && !a.locked) {
+          points = [a.position];
+          refObj = a;
+        }
       }
       return { item, refObj, bbox: points.length > 0 ? getBoundingBox(points) : null };
     }).filter(x => x.bbox && x.refObj);
@@ -525,6 +753,11 @@ export const useProjectStore = create<ProjectState>()(
           el.refObj.start.x += dx; el.refObj.end.x += dx;
         } else if (el.item.type === 'area') {
           el.refObj.points = el.refObj.points.map((p: any) => ({ ...p, x: p.x + dx }));
+        } else if (el.item.type === 'structure') {
+          if (el.refObj.type === 'fence') el.refObj.path.forEach((p: any) => { p.x += dx; });
+          else el.refObj.position.x += dx;
+        } else if (el.item.type === 'asset') {
+          el.refObj.position.x += dx;
         }
         currentX += (el.bbox.maxX - el.bbox.minX) + gap;
       }
@@ -542,6 +775,11 @@ export const useProjectStore = create<ProjectState>()(
           el.refObj.start.z += dz; el.refObj.end.z += dz;
         } else if (el.item.type === 'area') {
           el.refObj.points = el.refObj.points.map((p: any) => ({ ...p, z: p.z + dz }));
+        } else if (el.item.type === 'structure') {
+          if (el.refObj.type === 'fence') el.refObj.path.forEach((p: any) => { p.z += dz; });
+          else el.refObj.position.z += dz;
+        } else if (el.item.type === 'asset') {
+          el.refObj.position.z += dz;
         }
         currentZ += (el.bbox.maxZ - el.bbox.minZ) + gap;
       }
@@ -564,6 +802,19 @@ export const useProjectStore = create<ProjectState>()(
       } else if (item.type === 'area') {
         const a = newData.areas.find(x => x.id === item.id);
         if (a) points = a.points;
+      } else if (item.type === 'structure') {
+        const s = newData.structures?.find(x => x.id === item.id);
+        if (s) {
+          if (s.type === 'fence') points = s.path;
+          else {
+            const w2 = s.dimensions.width / 2;
+            const d2 = s.dimensions.depth / 2;
+            points = [
+              { x: s.position.x - w2, z: s.position.z - d2 },
+              { x: s.position.x + w2, z: s.position.z + d2 }
+            ];
+          }
+        }
       }
       
       if (points.length > 0) {
@@ -603,6 +854,29 @@ export const useProjectStore = create<ProjectState>()(
             z: axis === 'vertical' ? centerZ + (centerZ - p.z) : p.z
           }));
         }
+      } else if (item.type === 'structure') {
+        const s = newData.structures?.find(x => x.id === item.id);
+        if (s && !s.locked) {
+          if (s.type === 'fence') {
+            s.path = s.path.map(p => ({
+              x: axis === 'horizontal' ? centerX + (centerX - p.x) : p.x,
+              z: axis === 'vertical' ? centerZ + (centerZ - p.z) : p.z
+            }));
+          } else {
+            if (axis === 'horizontal') s.position.x = centerX + (centerX - s.position.x);
+            if (axis === 'vertical') s.position.z = centerZ + (centerZ - s.position.z);
+            if (axis === 'horizontal') s.rotation = 180 - (s.rotation || 0); // basic reflection
+            if (axis === 'vertical') s.rotation = -(s.rotation || 0);
+          }
+        }
+      } else if (item.type === 'asset') {
+        const a = newData.placedAssets?.find(x => x.id === item.id);
+        if (a && !a.locked) {
+          if (axis === 'horizontal') a.position.x = centerX + (centerX - a.position.x);
+          if (axis === 'vertical') a.position.z = centerZ + (centerZ - a.position.z);
+          if (axis === 'horizontal') a.rotation = 180 - (a.rotation || 0);
+          if (axis === 'vertical') a.rotation = -(a.rotation || 0);
+        }
       }
     }
     return { data: newData };
@@ -634,6 +908,7 @@ export const useProjectStore = create<ProjectState>()(
     if (newData.openings) newData.openings.forEach((o: IOpening) => { if (o.buildingId === id) delete o.buildingId; });
     if (newData.annotations) newData.annotations.forEach((a: any) => { if (a.buildingId === id) delete a.buildingId; });
     if (newData.roofs) newData.roofs = newData.roofs.filter((r: IRoof) => r.buildingId !== id);
+    if (newData.structures) newData.structures.forEach((s: Structure) => { if (s.buildingId === id) delete s.buildingId; });
     return { data: newData };
   }),
 
@@ -671,6 +946,9 @@ export const useProjectStore = create<ProjectState>()(
       } else if (item.type === 'opening' || item.type === 'door' || item.type === 'window') {
         const o = newData.openings?.find((x: IOpening) => x.id === item.id);
         if (o) o.buildingId = newBuildingId;
+      } else if (item.type === 'structure') {
+        const s = newData.structures?.find((x: Structure) => x.id === item.id);
+        if (s) s.buildingId = newBuildingId;
       }
     });
 
@@ -690,6 +968,7 @@ export const useProjectStore = create<ProjectState>()(
     if (newData.openings) newData.openings.forEach((o: IOpening) => { if (o.buildingId === buildingId) delete o.buildingId; });
     if (newData.annotations) newData.annotations.forEach((a: any) => { if (a.buildingId === buildingId) delete a.buildingId; });
     if (newData.roofs) newData.roofs = newData.roofs.filter((r: IRoof) => r.buildingId !== buildingId);
+    if (newData.structures) newData.structures.forEach((s: Structure) => { if (s.buildingId === buildingId) delete s.buildingId; });
     
     return { data: newData };
   }),
@@ -917,10 +1196,71 @@ export const useProjectStore = create<ProjectState>()(
       }
     };
   }),
+
+  addStructure: (structure) => set((state) => ({
+    data: { ...state.data, structures: [...(state.data.structures || []), structure] }
+  })),
+
+  updateStructure: (id, updates) => set((state) => {
+    const existingStructure = state.data.structures?.find(s => s.id === id);
+    if (existingStructure?.locked && (updates as any).locked !== false) return state;
+
+    return {
+      data: {
+        ...state.data,
+        structures: (state.data.structures || []).map(s => s.id === id ? { ...s, ...updates } as Structure : s)
+      }
+    };
+  }),
+
+  deleteStructure: (id) => set((state) => {
+    const existingStructure = state.data.structures?.find(s => s.id === id);
+    if (existingStructure?.locked) return state;
+
+    return {
+      data: {
+        ...state.data,
+        structures: (state.data.structures || []).filter(s => s.id !== id)
+      }
+    };
+  }),
+
+  addPlacedAsset: (asset) => set((state) => ({
+    data: { ...state.data, placedAssets: [...(state.data.placedAssets || []), asset] }
+  })),
+
+  updatePlacedAsset: (id, updates) => set((state) => {
+    const existingAsset = state.data.placedAssets?.find(a => a.id === id);
+    if (existingAsset?.locked && (updates as any).locked !== false) return state;
+
+    return {
+      data: {
+        ...state.data,
+        placedAssets: (state.data.placedAssets || []).map(a => a.id === id ? { ...a, ...updates } as typeof a : a)
+      }
+    };
+  }),
+
+  deletePlacedAsset: (id) => set((state) => {
+    const existingAsset = state.data.placedAssets?.find(a => a.id === id);
+    if (existingAsset?.locked) return state;
+
+    return {
+      data: {
+        ...state.data,
+        placedAssets: (state.data.placedAssets || []).filter(a => a.id !== id)
+      }
+    };
+  }),
     }),
     {
       name: 'garden-house-project-storage',
-      partialize: (state) => ({ data: state.data }),
+      partialize: (state) => ({ 
+        data: {
+          ...state.data,
+          aiRequests: state.data.aiRequests?.map(req => ({ ...req, imageDataUrl: undefined })) || []
+        }
+      }),
     }
   )
 );

@@ -26,6 +26,8 @@ export interface ISite extends IBaseObject {
   textSize?: number;
 }
 
+export type BuildingFrontSide = 'minZ' | 'maxZ' | 'minX' | 'maxX';
+
 export interface IBuilding {
   id: string;
   name: string;
@@ -36,6 +38,8 @@ export interface IBuilding {
   footprint?: { x: number; z: number }[];
   footprintVersion?: number;
   footprintDirty?: boolean;
+  frontSide?: BuildingFrontSide;
+  frontSource?: 'manual' | 'auto' | 'default';
 }
 
 export interface ILevel {
@@ -93,14 +97,96 @@ export interface IDimension extends IBaseObject {
 export interface IRoof extends IBaseObject {
   buildingId: string;
   type: 'flat' | 'japanese' | 'thai';
-  overhang: number;
+  color: string;
+  angle: number;
   elevation: number;
-  height?: number;
-  angle?: number;
-  ridgeDirection?: 'auto' | 'horizontal' | 'vertical';
+  overhang: number;
+  visible?: boolean;
   material?: {
-    type: 'concrete' | 'tile' | 'metal';
+    type: 'concrete' | 'metal' | 'tile';
+    roughness?: number;
+    metalness?: number;
   };
+  segments?: any[]; // Array of RoofSegmentParams for complex roofs
+}
+
+export interface IStructure extends IBaseObject {
+  type: 'stairs' | 'patio' | 'sideKitchen' | 'garage';
+  position: Vector2;
+  dimensions: {
+    width: number;
+    depth: number;
+    height: number;
+  };
+  buildingId?: string;
+  // Specific properties
+  stepCount?: number; // for stairs
+  material?: string; // for patio, etc.
+}
+
+export interface IFenceStructure extends IBaseObject {
+  type: 'fence';
+  path: Vector2[];
+  height: number;
+  buildingId?: string;
+}
+
+export type Structure = IStructure | IFenceStructure;
+
+export interface IAssetDefinition {
+  id: string;
+  name: string;
+  category: 'furniture' | 'plant' | 'vehicle' | 'decoration' | 'architecture';
+  source: 'primitive' | 'glb' | 'generated';
+  renderer?: 'box' | 'cylinder' | 'glb' | 'parametric' | string;
+  url?: string;
+  model: {
+    type: 'box' | 'cylinder' | 'glb' | string;
+    url?: string;
+  };
+  defaultSize: {
+    width: number;
+    depth: number;
+    height: number;
+  };
+  resizePolicy: 'freeResize' | 'proportionalResize' | 'presetOnly';
+  metadata?: {
+    style?: string;
+    material?: string;
+    color?: string;
+    tags?: string[];
+  };
+  thumbnail?: string;
+}
+
+export interface IPlacedAsset extends IBaseObject {
+  assetId: string;
+  version?: number;
+  position: Vector3; // typically x, y (elevation), z
+  scale: Vector3; // 1, 1, 1 default
+  materialOverride?: {
+    color?: string;
+    textureUrl?: string;
+    roughness?: number;
+    metalness?: number;
+  };
+  buildingId?: string;
+}
+
+export interface IAIRequest extends IBaseObject {
+  type: 'region' | 'asset' | 'architecture';
+  category: string; // from the 60 predefined categories
+  geometry?: {
+    type: 'rectangle' | 'circle' | 'polygon';
+    points: Vector2[];
+    radius?: number; // for circle
+  };
+  imageDataUrl?: string; // v1 uses data url, later moved to asset storage
+  prompt?: string;
+  buildingId?: string;
+  status?: 'pending' | 'applied' | 'rejected';
+  intent?: any;
+  regionId?: string;
 }
 
 export interface IProject {
@@ -117,22 +203,26 @@ export interface IProject {
   areas: IArea[];
   openings: IOpening[];
   roofs: IRoof[];
-  placedAssets: any[];
+  structures: Structure[];
+  placedAssets: IPlacedAsset[];
+  aiRequests: IAIRequest[];
   annotations: any[];
   materials: any[];
 }
 
 export interface IValidationIssue {
   severity: 'fatal' | 'warning';
-  objectType: 'project' | 'site' | 'building' | 'wall' | 'area' | 'opening' | 'dimension' | 'json';
+  objectType: 'project' | 'site' | 'building' | 'wall' | 'area' | 'opening' | 'dimension' | 'structure' | 'asset' | 'json';
   objectId: string;
   fieldPath: string;
   message: string;
 }
 
+
+
 export interface SelectedItem {
   id: string;
-  type: 'site' | 'building' | 'wall' | 'area' | 'opening' | 'dimension' | 'roof' | 'wallEndpoint' | 'areaVertex' | 'dimensionEndpoint';
+  type: 'site' | 'building' | 'wall' | 'area' | 'opening' | 'dimension' | 'roof' | 'structure' | 'asset' | 'wallEndpoint' | 'areaVertex' | 'dimensionEndpoint' | 'fenceVertex';
   // Extra fields for endpoints/vertices during drag operations
   endpoint?: 'start' | 'end';
   pointIndex?: number;

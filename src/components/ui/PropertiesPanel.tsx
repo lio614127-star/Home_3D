@@ -6,6 +6,7 @@ import { useI18nStore } from '../../store/useI18nStore';
 import { useTheme } from '../../theme/tokens';
 import { TransformPanel } from './TransformPanel';
 import { NumericInput } from './NumericInput';
+import { getAssetDefinition } from '../../core/assets/catalog';
 
 export const PropertiesPanel: React.FC = () => {
   const { selectedObjectId, selectedObjectType, selectedItems, showAreaName, showAreaArea } = useUIStore();
@@ -17,6 +18,8 @@ export const PropertiesPanel: React.FC = () => {
   const addRoof = useProjectStore(state => state.addRoof);
   const updateRoof = useProjectStore(state => state.updateRoof);
   const deleteRoof = useProjectStore(state => state.deleteRoof);
+  const updateStructure = useProjectStore(state => state.updateStructure);
+  const deleteStructure = useProjectStore(state => state.deleteStructure);
   const { t } = useI18nStore();
   const theme = useTheme();
 
@@ -196,6 +199,28 @@ export const PropertiesPanel: React.FC = () => {
               }
             }} style={{ width: '100%', padding: '4px', boxSizing: 'border-box' }} /></label>
           </div>
+          <div style={{ marginBottom: '5px' }}>
+            <label>Mặt tiền (Building Front): 
+              <select 
+                value={b.frontSource === 'auto' || !b.frontSide ? 'auto' : b.frontSide} 
+                onChange={e => {
+                  useProjectStore.getState().commitHistory();
+                  if (e.target.value === 'auto') {
+                    updateBuilding({ id: b.id, frontSide: undefined, frontSource: 'auto' });
+                  } else {
+                    updateBuilding({ id: b.id, frontSide: e.target.value as any, frontSource: 'manual' });
+                  }
+                }} 
+                style={{ width: '100%', padding: '4px', boxSizing: 'border-box' }}
+              >
+                <option value="auto">Tự động (Auto)</option>
+                <option value="minZ">Mặt trước: phía dưới (minZ)</option>
+                <option value="maxZ">Mặt trước: phía trên (maxZ)</option>
+                <option value="minX">Mặt trước: bên trái (minX)</option>
+                <option value="maxX">Mặt trước: bên phải (maxX)</option>
+              </select>
+            </label>
+          </div>
           <button 
             onClick={() => {
               useProjectStore.getState().ungroupBuilding(b.id);
@@ -234,6 +259,17 @@ export const PropertiesPanel: React.FC = () => {
             }
             return (
               <div style={{ padding: '10px', background: 'rgba(0,0,0,0.02)', borderRadius: '4px', border: '1px solid #eee' }}>
+                <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={roof.visible !== false} 
+                    onChange={e => updateRoof(roof.id, { visible: e.target.checked })} 
+                    id={`roof-visible-${roof.id}`}
+                  />
+                  <label htmlFor={`roof-visible-${roof.id}`} style={{ marginLeft: '5px', cursor: 'pointer', fontWeight: 'bold', color: theme.accent }}>
+                    Hiển thị mái nhà trên 3D
+                  </label>
+                </div>
                 <div style={{ marginBottom: '8px' }}>
                   <label>Loại mái: 
                     <select value={roof.type} onChange={e => updateRoof(roof.id, { type: e.target.value as any })} style={{ width: '100%', padding: '4px', marginTop: '4px' }}>
@@ -358,6 +394,8 @@ export const PropertiesPanel: React.FC = () => {
       </div>
     );
   }
+
+
 
   if (selectedObjectType === 'area') {
     const area = project.areas.find(r => r.id === selectedObjectId);
@@ -587,6 +625,204 @@ export const PropertiesPanel: React.FC = () => {
           useUIStore.getState().setSelectedObject(null, null);
         }} style={{ width: '100%', padding: '8px', background: '#d32f2f', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
           {t("action.deleteDimension") || "Xóa đường đo"}
+        </button>
+      </div>
+    );
+  }
+
+  if (selectedObjectType === 'structure') {
+    const structure = project.structures?.find(s => s.id === selectedObjectId);
+    if (!structure) return null;
+
+    if (structure.type === 'fence') {
+      return (
+        <div style={{ padding: '15px', fontSize: '13px', boxSizing: 'border-box', width: '100%', color: theme.textPrimary }}>
+          <h3 style={{ marginTop: 0, marginBottom: '15px' }}>Hàng rào</h3>
+          <p style={{ marginBottom: '10px' }}><strong>ID:</strong> {structure.id}</p>
+          <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+            <label style={{ marginBottom: '4px', fontWeight: '500' }}>Chiều cao (m)</label>
+            <NumericInput value={structure.height} onChange={v => updateStructure(structure.id, { height: v })} allowNegative={false} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+          </div>
+          <button onClick={() => {
+            deleteStructure(structure.id);
+            useUIStore.getState().setSelectedObject(null, null);
+          }} style={{ width: '100%', padding: '8px', background: '#d32f2f', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+            Xóa Hàng rào
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ padding: '15px', fontSize: '13px', boxSizing: 'border-box', width: '100%', color: theme.textPrimary }}>
+        <h3 style={{ marginTop: 0, marginBottom: '15px' }}>
+          {structure.type === 'stairs' ? 'Bậc tam cấp' : structure.type === 'patio' ? 'Sân bê tông' : structure.type === 'sideKitchen' ? 'Bếp hông' : 'Gara'}
+        </h3>
+        <p style={{ marginBottom: '10px' }}><strong>ID:</strong> {structure.id}</p>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Tọa độ X (m)</label>
+          <NumericInput value={structure.position.x} onChange={v => updateStructure(structure.id, { position: { ...structure.position, x: v } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Tọa độ Z (m)</label>
+          <NumericInput value={structure.position.z} onChange={v => updateStructure(structure.id, { position: { ...structure.position, z: v } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Chiều rộng (m)</label>
+          <NumericInput value={structure.dimensions.width} onChange={v => updateStructure(structure.id, { dimensions: { ...structure.dimensions, width: v } })} allowNegative={false} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Chiều sâu (m)</label>
+          <NumericInput value={structure.dimensions.depth} onChange={v => updateStructure(structure.id, { dimensions: { ...structure.dimensions, depth: v } })} allowNegative={false} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Chiều cao (m)</label>
+          <NumericInput value={structure.dimensions.height} onChange={v => updateStructure(structure.id, { dimensions: { ...structure.dimensions, height: v } })} allowNegative={false} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        {structure.type === 'stairs' && (
+          <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+            <label style={{ marginBottom: '4px', fontWeight: '500' }}>Số bậc</label>
+            <NumericInput value={structure.stepCount || 3} onChange={v => updateStructure(structure.id, { stepCount: Math.round(v) })} allowNegative={false} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+          </div>
+        )}
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Góc xoay (Độ)</label>
+          <NumericInput value={structure.rotation || 0} onChange={v => updateStructure(structure.id, { rotation: v })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        <TransformPanel items={selectedItems} />
+        <button onClick={() => {
+          deleteStructure(structure.id);
+          useUIStore.getState().setSelectedObject(null, null);
+          useUIStore.getState().setSelectedItems([]);
+        }} style={{ width: '100%', padding: '8px', background: '#d32f2f', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+          Xóa
+        </button>
+      </div>
+    );
+  }
+
+  if (selectedObjectType === 'asset') {
+    const asset = project.placedAssets?.find(a => a.id === selectedObjectId);
+    const updatePlacedAsset = useProjectStore.getState().updatePlacedAsset;
+    const deletePlacedAsset = useProjectStore.getState().deletePlacedAsset;
+
+    if (!asset) return null;
+    const assetDef = getAssetDefinition(asset.assetId);
+    const baseW = assetDef?.defaultSize.width || 1;
+    const baseH = assetDef?.defaultSize.height || 1;
+    const baseD = assetDef?.defaultSize.depth || 1;
+    
+    const w = (asset.scale?.x || 1) * baseW;
+    const h = (asset.scale?.y || 1) * baseH;
+    const d = (asset.scale?.z || 1) * baseD;
+
+    return (
+      <div style={{ padding: '15px', fontSize: '13px', boxSizing: 'border-box', width: '100%', color: theme.textPrimary }}>
+        <h3 style={{ marginTop: 0, marginBottom: '15px' }}>Nội thất / Asset</h3>
+        <p style={{ marginBottom: '10px' }}><strong>Tên:</strong> {assetDef?.name}</p>
+        <p style={{ marginBottom: '10px' }}><strong>ID:</strong> {asset.id}</p>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Tọa độ X (m)</label>
+          <NumericInput value={asset.position.x} onChange={v => updatePlacedAsset(asset.id, { position: { ...asset.position, x: v } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Tọa độ Z (m)</label>
+          <NumericInput value={asset.position.z} onChange={v => updatePlacedAsset(asset.id, { position: { ...asset.position, z: v } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Chiều rộng (m)</label>
+          <NumericInput value={w} onChange={v => updatePlacedAsset(asset.id, { scale: { ...asset.scale, x: v / baseW, y: asset.scale?.y || 1, z: asset.scale?.z || 1 } })} allowNegative={false} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Chiều sâu (m)</label>
+          <NumericInput value={d} onChange={v => updatePlacedAsset(asset.id, { scale: { ...asset.scale, x: asset.scale?.x || 1, y: asset.scale?.y || 1, z: v / baseD } })} allowNegative={false} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Chiều cao (m)</label>
+          <NumericInput value={h} onChange={v => updatePlacedAsset(asset.id, { scale: { ...asset.scale, x: asset.scale?.x || 1, y: v / baseH, z: asset.scale?.z || 1 } })} allowNegative={false} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Góc xoay (Độ)</label>
+          <NumericInput value={asset.rotation || 0} onChange={v => updatePlacedAsset(asset.id, { rotation: v })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Màu sắc (Color)</label>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <input type="color" value={asset.materialOverride?.color || '#cccccc'} onChange={e => updatePlacedAsset(asset.id, { materialOverride: { ...asset.materialOverride, color: e.target.value } })} style={{ cursor: 'pointer', padding: '0', border: 'none', width: '40px', height: '30px', borderRadius: '4px' }} />
+            <button onClick={() => updatePlacedAsset(asset.id, { materialOverride: { ...asset.materialOverride, color: undefined } })} style={{ padding: '5px 10px', fontSize: '12px', cursor: 'pointer', border: '1px solid #ccc', borderRadius: '4px', background: theme.toolbarBg, color: theme.textPrimary }}>Bỏ màu</button>
+          </div>
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Ảnh bề mặt (Texture URL)</label>
+          <input type="text" placeholder="https://..." value={asset.materialOverride?.textureUrl || ''} onChange={e => updatePlacedAsset(asset.id, { materialOverride: { ...asset.materialOverride, textureUrl: e.target.value } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px', background: theme.toolbarBg, color: theme.textPrimary }} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Độ nhám (Roughness): {asset.materialOverride?.roughness !== undefined ? asset.materialOverride.roughness : 0.8}</label>
+          <input type="range" min="0" max="1" step="0.05" value={asset.materialOverride?.roughness !== undefined ? asset.materialOverride.roughness : 0.8} onChange={e => updatePlacedAsset(asset.id, { materialOverride: { ...asset.materialOverride, roughness: parseFloat(e.target.value) } })} />
+        </div>
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Độ bóng kim loại (Metalness): {asset.materialOverride?.metalness !== undefined ? asset.materialOverride.metalness : 0.1}</label>
+          <input type="range" min="0" max="1" step="0.05" value={asset.materialOverride?.metalness !== undefined ? asset.materialOverride.metalness : 0.1} onChange={e => updatePlacedAsset(asset.id, { materialOverride: { ...asset.materialOverride, metalness: parseFloat(e.target.value) } })} />
+        </div>
+        <TransformPanel items={selectedItems} />
+        <button onClick={() => {
+          deletePlacedAsset(asset.id);
+          useUIStore.getState().setSelectedObject(null, null);
+          useUIStore.getState().setSelectedItems([]);
+        }} style={{ width: '100%', padding: '8px', background: '#d32f2f', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+          Xóa
+        </button>
+      </div>
+    );
+  }
+
+  if (selectedObjectType === 'aiRegion') {
+    const region = project.aiRequests?.find(r => r.id === selectedObjectId);
+    if (!region) return null;
+
+    const updateReq = (updates: Partial<typeof region>) => {
+      // Find index and update
+      const newReqs = [...(project.aiRequests || [])];
+      const idx = newReqs.findIndex(r => r.id === region.id);
+      if (idx !== -1) {
+        newReqs[idx] = { ...newReqs[idx], ...updates };
+        useProjectStore.setState({ data: { ...project, aiRequests: newReqs } });
+      }
+    };
+
+    const deleteReq = () => {
+      const newReqs = project.aiRequests?.filter(r => r.id !== region.id) || [];
+      useProjectStore.setState({ data: { ...project, aiRequests: newReqs } });
+      useUIStore.getState().setSelectedObject(null, null);
+    };
+
+    return (
+      <div style={{ padding: '15px', fontSize: '13px', boxSizing: 'border-box', width: '100%', color: theme.textPrimary }}>
+        <h3 style={{ marginTop: 0, marginBottom: '15px' }}>AI Region</h3>
+        <p style={{ marginBottom: '10px' }}><strong>ID:</strong> {region.id}</p>
+        
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Hạng mục (Category)</label>
+          <input type="text" value={region.category} onChange={e => updateReq({ category: e.target.value })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px', background: theme.toolbarBg, color: theme.textPrimary }} />
+        </div>
+
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Hình ảnh (Data URL)</label>
+          {region.imageDataUrl ? (
+            <img src={region.imageDataUrl} alt="AI Reference" style={{ width: '100%', height: 'auto', borderRadius: '4px', marginBottom: '5px' }} />
+          ) : (
+            <p style={{ margin: 0, color: theme.textSecondary, fontStyle: 'italic' }}>Chưa có hình ảnh</p>
+          )}
+          <input type="text" placeholder="Dán link ảnh / base64..." value={region.imageDataUrl || ''} onChange={e => updateReq({ imageDataUrl: e.target.value })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px', background: theme.toolbarBg, color: theme.textPrimary }} />
+        </div>
+
+        <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
+          <label style={{ marginBottom: '4px', fontWeight: '500' }}>Yêu cầu thêm (Prompt)</label>
+          <textarea value={region.prompt || ''} onChange={e => updateReq({ prompt: e.target.value })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px', background: theme.toolbarBg, color: theme.textPrimary, resize: 'vertical', minHeight: '60px', fontFamily: theme.fontFamily }} />
+        </div>
+
+        <button onClick={deleteReq} style={{ width: '100%', padding: '8px', background: '#d32f2f', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', marginTop: '10px' }}>
+          Xóa AI Region
         </button>
       </div>
     );

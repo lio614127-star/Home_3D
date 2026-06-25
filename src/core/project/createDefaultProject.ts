@@ -31,6 +31,7 @@ export const createDefaultProject = (): IProject => {
     areas: [],
     openings: [],
     roofs: [],
+    structures: [],
     placedAssets: [],
     annotations: [],
     materials: []

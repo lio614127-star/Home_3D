@@ -8,10 +8,13 @@ import { WallLayer } from './WallLayer';
 import { AreaLayer, AreaHandles } from './AreaLayer';
 import { OpeningLayer } from './OpeningLayer';
 import { RoofLayer } from './RoofLayer';
+import { StructureLayer } from './StructureLayer';
+import { AIRegion2D } from './AIRegion2D';
+import { Asset2D } from './Asset2D';
 import { DimensionLayer, DimensionCAD } from './DimensionLayer';
 import { GridLayer } from './GridLayer';
 import { GuideLayer } from './GuideLayer';
-import { canvasToProject, projectToCanvas, rectContainsPoint, rectIntersectsSegment, rectIntersectsPolygon, getWallLength, getWallCenterline, getWallRenderLine, RectProject, getMeasureSnapCandidates, MeasureCandidate, formatMeters, formatArea, formatSize, normalizeCoord } from '../../core/geometry/math';
+import { canvasToProject, projectToCanvas, rectContainsPoint, rectIntersectsSegment, rectIntersectsPolygon, getWallLength, getWallCenterline, getWallRenderLine, RectProject, getMeasureSnapCandidates, MeasureCandidate, formatMeters, formatArea, formatSize, normalizeCoord, findNearestBuilding } from '../../core/geometry/math';
 import { resolveBestSnap, SnapCandidate } from '../../core/geometry/snap';
 import { SelectionManager } from '../../core/selection/SelectionManager';
 import { SelectedItem } from '../../types';
@@ -42,6 +45,9 @@ export const Canvas2D: React.FC = () => {
   const [measureDraftEnd, setMeasureDraftEnd] = useState<{x: number, z: number} | null>(null);
   const [areaDraftStart, setAreaDraftStart] = useState<{x: number, z: number} | null>(null);
   const [siteDraftStart, setSiteDraftStart] = useState<{x: number, z: number} | null>(null);
+  const [structureDraftStart, setStructureDraftStart] = useState<{x: number, z: number} | null>(null);
+  const [activeFenceId, setActiveFenceId] = useState<string | null>(null);
+  const [aiRegionDraftStart, setAiRegionDraftStart] = useState<{x: number, z: number} | null>(null);
   const [mousePos, setMousePos] = useState<{x: number, z: number} | null>(null);
   const snappedPointerRef = useRef<{x: number, z: number, type?: SnapCandidate['type']} | null>(null);
   const [lastSnapType, setLastSnapType] = useState<SnapCandidate['type'] | undefined>(undefined);
@@ -114,6 +120,8 @@ export const Canvas2D: React.FC = () => {
             if (item.type === 'area') useProjectStore.getState().deleteArea(item.id);
             if (item.type === 'opening') useProjectStore.getState().deleteOpening(item.id);
             if (item.type === 'dimension') useProjectStore.getState().deleteAnnotation(item.id);
+            if (item.type === 'structure') useProjectStore.getState().deleteStructure(item.id);
+            if (item.type === 'asset') useProjectStore.getState().deletePlacedAsset(item.id);
           });
           setSelectedItems([]);
           deletedAny = true;
@@ -126,6 +134,8 @@ export const Canvas2D: React.FC = () => {
           if (selectedObjectType === 'area') useProjectStore.getState().deleteArea(selectedObjectId);
           if (selectedObjectType === 'opening') useProjectStore.getState().deleteOpening(selectedObjectId);
           if (selectedObjectType === 'dimension') useProjectStore.getState().deleteAnnotation(selectedObjectId);
+          if (selectedObjectType === 'structure') useProjectStore.getState().deleteStructure(selectedObjectId);
+          if (selectedObjectType === 'asset') useProjectStore.getState().deletePlacedAsset(selectedObjectId);
           deletedAny = true;
         }
         
@@ -141,11 +151,37 @@ export const Canvas2D: React.FC = () => {
         setMeasureDraftStart(null);
         setMeasureDraftEnd(null);
         setAreaDraftStart(null);
+        setAiRegionDraftStart(null);
         setSiteDraftStart(null);
+        setStructureDraftStart(null);
+        if (activeFenceId) {
+          const project = useProjectStore.getState().data;
+          const fence = project.structures?.find(s => s.id === activeFenceId);
+          if (fence && fence.type === 'fence' && fence.path.length < 2) {
+             useProjectStore.getState().deleteStructure(activeFenceId);
+          }
+        }
+        setActiveFenceId(null);
+        useUIStore.getState().setPendingStructureType(null);
         setMousePos(null);
         setSelectedObject(null, null);
         setSelectedItems([]);
         setActiveGuides([]);
+      }
+      
+      if (e.type === 'keydown' && e.key === 'Enter') {
+        const { mode, setMode } = useUIStore.getState();
+        if (mode === 'addFence') {
+          if (activeFenceId) {
+            const project = useProjectStore.getState().data;
+            const fence = project.structures?.find(s => s.id === activeFenceId);
+            if (fence && fence.type === 'fence' && fence.path.length < 2) {
+               useProjectStore.getState().deleteStructure(activeFenceId);
+            }
+          }
+          setActiveFenceId(null);
+          setMode('select');
+        }
       }
       
       if (e.type === 'keydown' && e.code === 'Tab') {
@@ -229,7 +265,7 @@ export const Canvas2D: React.FC = () => {
       orthoMode: orthoMode || e.evt?.shiftKey,
       gridMinorStep: dynamicGridMinorStep,
       scale: PX_PER_METER * zoom,
-      startPoint: currentMode === 'addWall' ? (wallChainAnchor || undefined) : (currentMode === 'measure' ? (measureDraftStart && !measureDraftEnd ? measureDraftStart : undefined) : undefined)
+      startPoint: currentMode === 'addWall' ? (wallChainAnchor || undefined) : (currentMode === 'measure' ? (measureDraftStart && !measureDraftEnd ? measureDraftStart : undefined) : (currentMode === 'addFence' && activeFenceId ? project.structures.find(s => s.id === activeFenceId)?.type === 'fence' ? (project.structures.find(s => s.id === activeFenceId) as any).path.slice(-1)[0] : undefined : undefined))
     });
 
     return { x: snapState.x, z: snapState.z };
@@ -246,6 +282,19 @@ export const Canvas2D: React.FC = () => {
        if (item.type === 'area') {
           const a = project.areas.find(a => a.id === item.id);
           if (a && rectIntersectsPolygon(rect, a.points)) return true;
+       }
+       if (item.type === 'structure') {
+          const s = project.structures?.find(s => s.id === item.id);
+          if (s) {
+            if (s.type === 'fence') {
+              if (s.path.some(pt => rectIntersectsSegment(rect, pt, pt))) return true; // Approximation for points
+            } else {
+              const cx = s.position.x; const cz = s.position.z;
+              const w = s.dimensions.width; const d = s.dimensions.depth;
+              const sRect: RectProject = { minX: cx - w/2, maxX: cx + w/2, minZ: cz - d/2, maxZ: cz + d/2 };
+              if (!(rect.minX > sRect.maxX || rect.maxX < sRect.minX || rect.minZ > sRect.maxZ || rect.maxZ < sRect.minZ)) return true;
+            }
+          }
        }
     }
     return false;
@@ -331,7 +380,7 @@ export const Canvas2D: React.FC = () => {
         orthoMode: orthoMode || e.evt?.shiftKey,
         gridMinorStep: dynamicGridMinorStep,
         scale: PX_PER_METER * zoom,
-        startPoint: currentMode === 'addWall' ? (wallChainAnchor || undefined) : (currentMode === 'measure' ? (measureDraftStart && !measureDraftEnd ? measureDraftStart : undefined) : undefined),
+        startPoint: currentMode === 'addWall' ? (wallChainAnchor || undefined) : (currentMode === 'measure' ? (measureDraftStart && !measureDraftEnd ? measureDraftStart : undefined) : (currentMode === 'addFence' && activeFenceId ? project.structures.find(s => s.id === activeFenceId)?.type === 'fence' ? (project.structures.find(s => s.id === activeFenceId) as any).path.slice(-1)[0] : undefined : undefined)),
         showAlignmentGuides: useUIStore.getState().showAlignmentGuides
       });
     }
@@ -391,6 +440,21 @@ export const Canvas2D: React.FC = () => {
         setMeasureDraftEnd(null);
       }
       if (mode === 'addArea') setAreaDraftStart(null);
+      if (mode === 'addFence') {
+        if (activeFenceId) {
+          const project = useProjectStore.getState().data;
+          const fence = project.structures?.find(s => s.id === activeFenceId);
+          if (fence && fence.type === 'fence' && fence.path.length < 2) {
+             useProjectStore.getState().deleteStructure(activeFenceId);
+          }
+        }
+        setActiveFenceId(null);
+      }
+      if (mode === 'addStructure') {
+        setStructureDraftStart(null);
+        useUIStore.getState().setPendingStructureType(null);
+        useUIStore.getState().setMode('select');
+      }
       
       useUIStore.getState().setActiveGuides([]);
       return;
@@ -490,6 +554,106 @@ export const Canvas2D: React.FC = () => {
       return;
     }
 
+    // === ADD STRUCTURE: dedicated two-click flow ===
+    if (mode === 'addStructure') {
+      const pendingType = useUIStore.getState().pendingStructureType;
+      if (!pendingType) return;
+      
+      if (!structureDraftStart) {
+        setStructureDraftStart({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
+      } else {
+        const p1 = structureDraftStart;
+        const p2 = { x: normalizeCoord(projX), z: normalizeCoord(projZ) };
+        const width = normalizeCoord(Math.abs(p2.x - p1.x));
+        const depth = normalizeCoord(Math.abs(p2.z - p1.z));
+        
+        if (width > 0.1 && depth > 0.1) {
+          const centerX = normalizeCoord((p1.x + p2.x) / 2);
+          const centerZ = normalizeCoord((p1.z + p2.z) / 2);
+          const newId = `structure_${Date.now()}`;
+          
+          let bId: string | undefined = undefined;
+          if (pendingType === 'garage' || pendingType === 'sideKitchen') {
+             bId = findNearestBuilding({ x: centerX, z: centerZ }, project, 2.0);
+          }
+          
+          useProjectStore.getState().commitHistory();
+          useProjectStore.getState().addStructure({
+            id: newId,
+            type: pendingType,
+            position: { x: centerX, z: centerZ },
+            dimensions: {
+              width,
+              depth,
+              height: pendingType === 'stairs' ? 0.45 : pendingType === 'patio' ? 0.05 : 3
+            },
+            stepCount: pendingType === 'stairs' ? 3 : undefined,
+            buildingId: bId,
+            visible: true
+          });
+          
+          setMode('select');
+          useUIStore.getState().setPendingStructureType(null);
+          setSelectedObject(newId, 'structure');
+          useUIStore.getState().setSelectedItems([{ type: 'structure', id: newId }]);
+        }
+        setStructureDraftStart(null);
+        useUIStore.getState().setActiveGuides([]);
+      }
+      return;
+    }
+
+    // === ADD ASSET ===
+    if (mode === 'addAsset') {
+      const pendingAssetId = useUIStore.getState().pendingAssetId;
+      if (!pendingAssetId) return;
+
+      const newId = `asset_${Date.now()}`;
+      useProjectStore.getState().commitHistory();
+      useProjectStore.getState().addPlacedAsset({
+        id: newId,
+        assetId: pendingAssetId,
+        position: { x: normalizeCoord(projX), z: normalizeCoord(projZ) },
+        rotation: 0,
+        scale: { x: 1, y: 1, z: 1 },
+        visible: true,
+        locked: false
+      });
+      
+      setMode('select');
+      useUIStore.getState().setPendingAssetId(null);
+      setSelectedObject(newId, 'asset');
+      useUIStore.getState().setSelectedItems([{ type: 'asset', id: newId }]);
+      return;
+    }
+
+    // === ADD AI REGION ===
+    if (mode === 'aiRegion') {
+      const type = useUIStore.getState().pendingAIRegionType;
+      if (!aiRegionDraftStart) {
+        setAiRegionDraftStart({ x: normalizeCoord(projX), z: normalizeCoord(projZ) });
+      } else {
+        const p1 = aiRegionDraftStart;
+        const p2 = { x: normalizeCoord(projX), z: normalizeCoord(projZ) };
+        const dx = Math.abs(p2.x - p1.x);
+        const dz = Math.abs(p2.z - p1.z);
+        const r = Math.sqrt(dx*dx + dz*dz);
+        
+        if (r > 0.1) {
+          useProjectStore.getState().commitHistory();
+          useProjectStore.getState().addAIRequest({
+            type: 'region',
+            category: 'general', // Default, user changes later in panel
+            geometry: type === 'circle' 
+              ? { type: 'circle', points: [p1], radius: r }
+              : { type: 'rectangle', points: [p1, p2] }
+          });
+        }
+        setAiRegionDraftStart(null);
+        useUIStore.getState().setMode('select');
+      }
+    }
+
     // === ADD WALL: chain drawing ===
     const currentAnchor = mode === 'addWall' ? wallChainAnchor : null;
 
@@ -534,6 +698,40 @@ export const Canvas2D: React.FC = () => {
             locked: false
           });
           setWallChainAnchor(p2); // Continue chain
+        }
+      }
+    }
+
+    // === ADD FENCE: chain drawing but updating same object ===
+    if (mode === 'addFence') {
+      const p = { x: normalizeCoord(projX), z: normalizeCoord(projZ) };
+      if (!activeFenceId) {
+        const newId = `fence_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        useProjectStore.getState().commitHistory();
+        useProjectStore.getState().addStructure({
+          id: newId,
+          type: 'fence',
+          path: [p],
+          height: 1.5,
+          layer: 'structures',
+          visible: true,
+          locked: false
+        });
+        setActiveFenceId(newId);
+        setMousePos(p);
+      } else {
+        const fence = project.structures.find(s => s.id === activeFenceId);
+        if (fence && fence.type === 'fence') {
+          const lastPoint = fence.path[fence.path.length - 1];
+          const dx = p.x - lastPoint.x;
+          const dz = p.z - lastPoint.z;
+          const length = Math.sqrt(dx*dx + dz*dz);
+          if (length > 0.1) {
+            useProjectStore.getState().commitHistory();
+            useProjectStore.getState().updateStructure(fence.id, {
+              path: [...fence.path, p]
+            });
+          }
         }
       }
     }
@@ -666,6 +864,76 @@ export const Canvas2D: React.FC = () => {
             fontSize={12 / zoom}
             align="center"
           />
+        </Group>
+      );
+    }
+
+    // Fence preview
+    if (mode === 'addFence' && activeFenceId && mousePos) {
+      const fence = project.structures.find(s => s.id === activeFenceId);
+      if (fence && fence.type === 'fence' && fence.path.length > 0) {
+        const lastPoint = fence.path[fence.path.length - 1];
+        const p1 = projectToCanvas(lastPoint.x, lastPoint.z);
+        const p2 = projectToCanvas(mousePos.x, mousePos.z);
+        const dx = mousePos.x - lastPoint.x;
+        const dz = mousePos.z - lastPoint.z;
+        const len = Math.sqrt(dx*dx + dz*dz);
+
+        elements.push(
+          <Group key="preview-fence" listening={false}>
+            <Line
+              points={[p1.x * PX_PER_METER, p1.y * PX_PER_METER, p2.x * PX_PER_METER, p2.y * PX_PER_METER]}
+              stroke="#795548"
+              strokeWidth={4 / zoom}
+              dash={[5 / zoom, 5 / zoom]}
+            />
+            <Text
+              x={(p1.x + p2.x) / 2 * PX_PER_METER}
+              y={(p1.y + p2.y) / 2 * PX_PER_METER - 15 / zoom}
+              text={formatMeters(len)}
+              fill="#795548"
+              fontSize={12 / zoom}
+              align="center"
+            />
+          </Group>
+        );
+      }
+    }
+
+    // AI Region preview
+    if (mode === 'aiRegion' && aiRegionDraftStart && mousePos) {
+      const type = useUIStore.getState().pendingAIRegionType;
+      const p1 = projectToCanvas(aiRegionDraftStart.x, aiRegionDraftStart.z);
+      const p2 = projectToCanvas(mousePos.x, mousePos.z);
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const r = Math.sqrt(dx*dx + dy*dy);
+
+      elements.push(
+        <Group key="preview-ai-region" listening={false}>
+          {type === 'rectangle' && (
+            <Rect
+              x={Math.min(p1.x, p2.x) * PX_PER_METER}
+              y={Math.min(p1.y, p2.y) * PX_PER_METER}
+              width={Math.abs(p1.x - p2.x) * PX_PER_METER}
+              height={Math.abs(p1.y - p2.y) * PX_PER_METER}
+              stroke="#9c27b0"
+              strokeWidth={2 / zoom}
+              dash={[10 / zoom, 5 / zoom]}
+              fill="rgba(156, 39, 176, 0.1)"
+            />
+          )}
+          {type === 'circle' && (
+            <Circle
+              x={p1.x * PX_PER_METER}
+              y={p1.y * PX_PER_METER}
+              radius={r * PX_PER_METER}
+              stroke="#9c27b0"
+              strokeWidth={2 / zoom}
+              dash={[10 / zoom, 5 / zoom]}
+              fill="rgba(156, 39, 176, 0.1)"
+            />
+          )}
         </Group>
       );
     }
@@ -887,6 +1155,77 @@ export const Canvas2D: React.FC = () => {
       );
     }
 
+    // Structure preview
+    if (mode === 'addStructure' && structureDraftStart && useUIStore.getState().pendingStructureType) {
+      const type = useUIStore.getState().pendingStructureType;
+      const minX = Math.min(structureDraftStart.x, mousePos.x);
+      const minZ = Math.min(structureDraftStart.z, mousePos.z);
+      const rawWidth = Math.abs(mousePos.x - structureDraftStart.x);
+      const rawDepth = Math.abs(mousePos.z - structureDraftStart.z);
+      const width = Number(rawWidth.toFixed(2));
+      const depth = Number(rawDepth.toFixed(2));
+      const pos = projectToCanvas(minX, minZ);
+      
+      let label = type === 'stairs' ? 'Bậc tam cấp' : type === 'patio' ? 'Sân phơi' : type === 'sideKitchen' ? 'Bếp hông' : 'Gara';
+
+      elements.push(
+        <Group key="preview-structure" listening={false}>
+          <Rect
+            x={pos.x * PX_PER_METER}
+            y={pos.y * PX_PER_METER}
+            width={width * PX_PER_METER}
+            height={depth * PX_PER_METER}
+            stroke={theme.structureStroke}
+            strokeWidth={2 / zoom}
+            dash={[5 / zoom, 5 / zoom]}
+            fill={theme.structureFill}
+            opacity={0.6}
+          />
+          {/* Center Label */}
+          <Text
+            x={pos.x * PX_PER_METER}
+            y={pos.y * PX_PER_METER + (depth * PX_PER_METER) / 2 - 12 / zoom}
+            width={width * PX_PER_METER}
+            text={`${label}\n${formatArea(width * depth)}`}
+            fill={theme.textPrimary}
+            fontSize={14 / zoom}
+            fontStyle="bold"
+            align="center"
+          />
+          {/* Top Width Dimension */}
+          <Group>
+            <Line points={[pos.x * PX_PER_METER, pos.y * PX_PER_METER - 15 / zoom, (pos.x + width) * PX_PER_METER, pos.y * PX_PER_METER - 15 / zoom]} stroke={theme.dimensionStroke} strokeWidth={1.5 / zoom} dash={[4 / zoom, 4 / zoom]} />
+            <Line points={[pos.x * PX_PER_METER, pos.y * PX_PER_METER - 20 / zoom, pos.x * PX_PER_METER, pos.y * PX_PER_METER - 10 / zoom]} stroke={theme.dimensionStroke} strokeWidth={1.5 / zoom} />
+            <Line points={[(pos.x + width) * PX_PER_METER, pos.y * PX_PER_METER - 20 / zoom, (pos.x + width) * PX_PER_METER, pos.y * PX_PER_METER - 10 / zoom]} stroke={theme.dimensionStroke} strokeWidth={1.5 / zoom} />
+            <Text
+              x={pos.x * PX_PER_METER}
+              y={pos.y * PX_PER_METER - 30 / zoom}
+              width={width * PX_PER_METER}
+              text={formatMeters(width)}
+              fill={theme.dimensionStroke}
+              fontSize={12 / zoom}
+              fontStyle="bold"
+              align="center"
+            />
+          </Group>
+          {/* Right Depth Dimension */}
+          <Group>
+            <Line points={[(pos.x + width) * PX_PER_METER + 15 / zoom, pos.y * PX_PER_METER, (pos.x + width) * PX_PER_METER + 15 / zoom, (pos.y + depth) * PX_PER_METER]} stroke={theme.dimensionStroke} strokeWidth={1.5 / zoom} dash={[4 / zoom, 4 / zoom]} />
+            <Line points={[(pos.x + width) * PX_PER_METER + 10 / zoom, pos.y * PX_PER_METER, (pos.x + width) * PX_PER_METER + 20 / zoom, pos.y * PX_PER_METER]} stroke={theme.dimensionStroke} strokeWidth={1.5 / zoom} />
+            <Line points={[(pos.x + width) * PX_PER_METER + 10 / zoom, (pos.y + depth) * PX_PER_METER, (pos.x + width) * PX_PER_METER + 20 / zoom, (pos.y + depth) * PX_PER_METER]} stroke={theme.dimensionStroke} strokeWidth={1.5 / zoom} />
+            <Text
+              x={(pos.x + width) * PX_PER_METER + 25 / zoom}
+              y={pos.y * PX_PER_METER + (depth * PX_PER_METER) / 2 - 6 / zoom}
+              text={formatMeters(depth)}
+              fill={theme.dimensionStroke}
+              fontSize={12 / zoom}
+              fontStyle="bold"
+            />
+          </Group>
+        </Group>
+      );
+    }
+
     // Measure preview
     if (mode === 'measure') {
       if (measureDraftStart && !measureDraftEnd) {
@@ -1095,6 +1434,17 @@ export const Canvas2D: React.FC = () => {
             {/* <BuildingLayer /> removed in Phase 9.5 */}
             <WallLayer walls={project.walls} scale={PX_PER_METER} zoom={zoom} />
             <RoofLayer scale={PX_PER_METER} />
+            <StructureLayer scale={PX_PER_METER} />
+            
+            {/* AI Regions */}
+            {project.aiRequests?.filter(req => req.type === 'region').map(region => (
+              <AIRegion2D key={region.id} region={region} zoom={zoom} pxPerMeter={PX_PER_METER} />
+            ))}
+
+            {/* Assets */}
+            {project.placedAssets?.map(asset => (
+              <Asset2D key={asset.id} asset={asset} />
+            ))}
             <AreaHandles areas={project.areas} scale={PX_PER_METER} zoom={zoom} />
             {show3DOpenings && <OpeningLayer openings={project.openings || []} walls={project.walls} scale={PX_PER_METER} zoom={zoom} />}
             <DimensionLayer walls={project.walls} areas={project.areas} buildings={project.buildings} scale={PX_PER_METER} zoom={zoom} />

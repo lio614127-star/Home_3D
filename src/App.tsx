@@ -4,6 +4,8 @@ import { Toolbar } from './components/ui/Toolbar';
 import { PropertiesPanel } from './components/ui/PropertiesPanel';
 import { ValidationPanel } from './components/ui/ValidationPanel';
 import { SavedProjectsPanel } from './components/ui/SavedProjectsPanel';
+import { AIAssistantPanel } from './components/ui/AIAssistantPanel';
+import { AIDebugPanel } from './components/ui/AIDebugPanel';
 import { useI18nStore } from './store/useI18nStore';
 import { useProjectStore } from './store/useProjectStore';
 import { useUIStore } from './store/useUIStore';
@@ -37,6 +39,14 @@ function App() {
       useProjectStore.getState().setProject(savedStore.projects[0].data);
     }
 
+    // Cleanup any lingering 1-point fences from state
+    const invalidFences = useProjectStore.getState().data.structures?.filter(
+      s => s.type === 'fence' && s.path && s.path.length < 2
+    );
+    if (invalidFences && invalidFences.length > 0) {
+      invalidFences.forEach(s => useProjectStore.getState().deleteStructure(s.id));
+    }
+
     return unsub;
   }, []);
 
@@ -62,14 +72,17 @@ function App() {
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedObjectId && selectedObjectType) {
         if (selectedObjectType === 'wall') {
           deleteWall(selectedObjectId);
-          setSelectedObject(null, null);
         } else if (selectedObjectType === 'area') {
           deleteArea(selectedObjectId);
-          setSelectedObject(null, null);
         } else if (selectedObjectType === 'opening') {
           deleteOpening(selectedObjectId);
-          setSelectedObject(null, null);
+        } else if (selectedObjectType === 'structure') {
+          useProjectStore.getState().deleteStructure(selectedObjectId);
+        } else if (selectedObjectType === 'aiRegion') {
+          useProjectStore.getState().deleteAIRequest(selectedObjectId);
         }
+        setSelectedObject(null, null);
+        useUIStore.getState().setSelectedItems([]);
       }
     };
 
@@ -118,6 +131,9 @@ function App() {
             <Scene3D />
           </div>
         </main>
+        
+        <AIAssistantPanel />
+        <AIDebugPanel />
         
         <aside style={{ width: '300px', background: theme.panelBg, borderLeft: `1px solid ${theme.panelBorder}`, display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '10px', background: theme.toolbarBg, borderBottom: `1px solid ${theme.panelBorder}` }}>

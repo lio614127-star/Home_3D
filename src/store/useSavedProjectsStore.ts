@@ -58,9 +58,16 @@ export const useSavedProjectsStore = create<SavedProjectsState>()(
     }),
     { 
       name: 'garden-house-saved-projects',
-      // only persist metadata to avoid hitting 5MB limit too quickly?
-      // actually, localstorage can store around 5MB, a typical project is tiny.
-      // We will just persist everything.
+      partialize: (state) => ({
+        ...state,
+        projects: state.projects.map(p => ({
+          ...p,
+          data: {
+            ...p.data,
+            aiRequests: p.data.aiRequests?.map(req => ({ ...req, imageDataUrl: undefined })) || []
+          }
+        }))
+      })
     }
   )
 );

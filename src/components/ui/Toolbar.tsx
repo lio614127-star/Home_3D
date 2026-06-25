@@ -3,12 +3,15 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { projectSerializer } from '../../core/project/projectSerializer';
 import { createDefaultProject } from '../../core/project/createDefaultProject';
 import { useUIStore } from '../../store/useUIStore';
+import { useAIStore } from '../../store/useAIStore';
 import { useI18nStore } from '../../store/useI18nStore';
 import { Language } from '../../i18n/types';
 import { useTheme } from '../../theme/tokens';
 import { useSavedProjectsStore } from '../../store/useSavedProjectsStore';
+import { AssetCatalogPanel } from './AssetCatalogPanel';
 
 export const Toolbar: React.FC = () => {
+  const [showAssetCatalog, setShowAssetCatalog] = React.useState(false);
   const project = useProjectStore(state => state.data);
   const setProject = useProjectStore(state => state.setProject);
   const deleteWall = useProjectStore(state => state.deleteWall);
@@ -17,9 +20,12 @@ export const Toolbar: React.FC = () => {
   
   const { 
     mode, setMode, selectedObjectId, selectedObjectType, setSelectedObject, setValidationIssues,
-    viewMode, setViewMode, show3DSite, show3DRooms, show3DWalls, show3DGrid, show3DOpenings, toggle3DLayer, cameraMode, setCameraMode,
+    viewMode, setViewMode, show3DSite, show3DRooms, show3DWalls, show3DGrid, show3DOpenings, show3DStructures, toggle3DLayer, cameraMode, setCameraMode,
     themeMode, toggleThemeMode
   } = useUIStore();
+  
+  const isAIPanelOpen = useAIStore(state => state.isPanelOpen);
+  const setAIPanelOpen = useAIStore(state => state.setPanelOpen);
   
   const { t, language, setLanguage } = useI18nStore();
   const theme = useTheme();
@@ -68,6 +74,11 @@ export const Toolbar: React.FC = () => {
     }
   };
 
+  const handleAddStructure = (type: 'stairs' | 'patio' | 'sideKitchen' | 'garage') => {
+    setMode('addStructure');
+    useUIStore.getState().setPendingStructureType(type);
+  };
+
   const handleDelete = () => {
     if (selectedObjectId && selectedObjectType) {
       if (selectedObjectType === 'wall') {
@@ -81,6 +92,9 @@ export const Toolbar: React.FC = () => {
         setSelectedObject(null, null);
       } else if (selectedObjectType === 'dimension') {
         useProjectStore.getState().deleteAnnotation(selectedObjectId);
+        setSelectedObject(null, null);
+      } else if (selectedObjectType === 'aiRegion') {
+        useProjectStore.getState().deleteAIRequest(selectedObjectId);
         setSelectedObject(null, null);
       }
     }
@@ -107,6 +121,48 @@ export const Toolbar: React.FC = () => {
         <button onClick={() => setMode('addDoor')} style={btnStyle(mode === 'addDoor')}>{t("tool.addDoor")}</button>
         <button onClick={() => setMode('addWindow')} style={btnStyle(mode === 'addWindow')}>{t("tool.addWindow")}</button>
         <button onClick={() => setMode('measure')} style={btnStyle(mode === 'measure')}>Đo</button>
+        <div style={{ width: '1px', height: '15px', background: theme.panelBorder, margin: '0 5px' }}></div>
+        <select 
+          onChange={(e) => {
+            if (e.target.value === 'addFence') setMode('addFence');
+            else if (e.target.value) handleAddStructure(e.target.value as any);
+            e.target.value = ''; // reset after action
+          }} 
+          style={btnStyle(false)}
+        >
+          <option value="">+ Components</option>
+          <option value="stairs">Bậc tam cấp</option>
+          <option value="patio">Sân bê tông</option>
+          <option value="sideKitchen">Bếp hông</option>
+          <option value="garage">Gara</option>
+          <option value="addFence">Hàng rào (vẽ)</option>
+        </select>
+        <button onClick={() => setShowAssetCatalog(true)} style={btnStyle(mode === 'addAsset')}>
+          Thư viện Nội thất
+        </button>
+        <select 
+          onChange={(e) => {
+            if (e.target.value === 'aiRegion_rectangle') {
+              setMode('aiRegion');
+              useUIStore.getState().setPendingAIRegionType('rectangle');
+            } else if (e.target.value === 'aiRegion_circle') {
+              setMode('aiRegion');
+              useUIStore.getState().setPendingAIRegionType('circle');
+            }
+            e.target.value = '';
+          }}
+          style={btnStyle(mode === 'aiRegion')}
+        >
+          <option value="">AI Region</option>
+          <option value="aiRegion_rectangle">□ Rectangle</option>
+          <option value="aiRegion_circle">◯ Circle</option>
+        </select>
+        <button 
+          onClick={() => setAIPanelOpen(!isAIPanelOpen)}
+          style={{...btnStyle(isAIPanelOpen), backgroundColor: isAIPanelOpen ? theme.accent : theme.panelBg, borderColor: theme.accent }}
+        >
+          ✨ AI Panel
+        </button>
         <div style={{ width: '1px', height: '15px', background: theme.panelBorder, margin: '0 5px' }}></div>
         
         {/* Drafting Toggles */}
@@ -135,7 +191,7 @@ export const Toolbar: React.FC = () => {
         </div>
         
         <div style={{ width: '1px', height: '15px', background: theme.panelBorder, margin: '0 5px' }}></div>
-        <button onClick={handleDelete} disabled={!selectedObjectId || (selectedObjectType !== 'wall' && selectedObjectType !== 'area' && selectedObjectType !== 'opening' && selectedObjectType !== 'dimension')} style={{ padding: '3px 10px', background: selectedObjectId && (selectedObjectType === 'wall' || selectedObjectType === 'area' || selectedObjectType === 'opening' || selectedObjectType === 'dimension') ? theme.danger : theme.panelBg, color: selectedObjectId ? '#fff' : theme.textSecondary, border: `1px solid ${theme.panelBorder}`, cursor: 'pointer', fontSize: '12px' }}>
+        <button onClick={handleDelete} disabled={!selectedObjectId || (selectedObjectType !== 'wall' && selectedObjectType !== 'area' && selectedObjectType !== 'opening' && selectedObjectType !== 'dimension' && selectedObjectType !== 'aiRegion')} style={{ padding: '3px 10px', background: selectedObjectId && (selectedObjectType === 'wall' || selectedObjectType === 'area' || selectedObjectType === 'opening' || selectedObjectType === 'dimension' || selectedObjectType === 'aiRegion') ? theme.danger : theme.panelBg, color: selectedObjectId ? '#fff' : theme.textSecondary, border: `1px solid ${theme.panelBorder}`, cursor: 'pointer', fontSize: '12px' }}>
           {t("toolbar.delete")}
         </button>
         <div style={{ width: '1px', height: '15px', background: theme.panelBorder, margin: '0 5px', marginLeft: 'auto' }}></div>
@@ -183,9 +239,16 @@ export const Toolbar: React.FC = () => {
             <label style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', fontSize: '12px' }}>
               <input type="checkbox" checked={show3DOpenings} onChange={() => toggle3DLayer('openings')} /> {t("layer.openings")}
             </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', fontSize: '12px' }}>
+              <input type="checkbox" checked={show3DStructures} onChange={() => toggle3DLayer('structures')} /> {t("layer.structures") || "Structures"}
+            </label>
           </>
         )}
       </div>
+
+      {showAssetCatalog && (
+        <AssetCatalogPanel onClose={() => setShowAssetCatalog(false)} />
+      )}
     </div>
   );
 };

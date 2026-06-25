@@ -10,6 +10,8 @@ import { Wall3D } from './Wall3D';
 import { AreaFloor3D } from './AreaFloor3D';
 import { OpeningPlaceholder3D } from './OpeningPlaceholder3D';
 import { Roof3D } from './Roof3D';
+import { Structure3D } from './Structure3D';
+import { Asset3D } from './Asset3D';
 import { CameraControls3D } from './CameraControls3D';
 import { useTheme } from '../../theme/tokens';
 
@@ -57,12 +59,32 @@ const RectangularGrid3D: React.FC<{ width: number; depth: number }> = ({ width, 
 
 export const Scene3D: React.FC = () => {
   const project = useProjectStore(state => state.data);
-  const { show3DSite, show3DRooms, show3DWalls, show3DGrid, show3DOpenings } = useUIStore();
+  const { show3DSite, show3DRooms, show3DWalls, show3DGrid, show3DOpenings, show3DStructures } = useUIStore();
 
   const cx = project.site.width / 2 || 0;
   const cz = project.site.depth / 2 || 0;
   const theme = useTheme();
   const effectiveBaseHeight = 0;
+
+  const getElevationAt = (x: number, z: number) => {
+    let h = effectiveBaseHeight;
+    project.areas.forEach(area => {
+      if (area.elevation && area.elevation > 0 && isPointInPolygon({x, z}, area.points)) {
+        h = Math.max(h, effectiveBaseHeight + area.elevation);
+      }
+    });
+    (project.structures || []).forEach(struct => {
+       if (!struct.dimensions || !struct.position) return;
+       const hw = struct.dimensions.width / 2;
+       const hd = struct.dimensions.depth / 2;
+       const dx = Math.abs(x - struct.position.x);
+       const dz = Math.abs(z - struct.position.z);
+       if (dx <= hw && dz <= hd) {
+          h = Math.max(h, effectiveBaseHeight + struct.dimensions.height);
+       }
+    });
+    return h;
+  };
 
   return (
     <div style={{ width: '100%', height: '100%', background: theme.scene3dBg }}>
@@ -87,6 +109,17 @@ export const Scene3D: React.FC = () => {
           {show3DGrid && <RectangularGrid3D width={WORKSPACE_WIDTH} depth={WORKSPACE_DEPTH} />}
           {show3DSite && <SitePlane3D site={project.site} />}
           {/* <BuildingFloor3D building={project.building} /> */}
+          
+          {show3DStructures && (project.structures || []).map(structure => {
+            if (structure.visible === false) return null;
+            return <Structure3D key={structure.id} structure={structure} />;
+          })}
+
+          {show3DStructures && (project.placedAssets || []).map(asset => {
+            if (asset.visible === false) return null;
+            const h = getElevationAt(asset.position.x, asset.position.z);
+            return <Asset3D key={asset.id} asset={asset} baseHeight={h} />;
+          })}
           
           {show3DWalls && project.walls.map(wall => {
             const wallOpenings = (project.openings || []).filter(o => o.wallId === wall.id);
@@ -136,6 +169,8 @@ export const Scene3D: React.FC = () => {
             if (!building) return null;
             return <Roof3D key={roof.id} roof={roof} building={building} />;
           })}
+
+
         </Suspense>
       </Canvas>
     </div>

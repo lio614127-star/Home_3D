@@ -728,3 +728,46 @@ export function offsetPolygon(points: { x: number; z: number }[], offset: number
   }
   return newPoints;
 }
+
+export function findNearestBuilding(position: {x: number, z: number}, project: import('../../types').IProject, threshold: number): string | undefined {
+  let nearestId: string | undefined;
+  let minDistance = Infinity;
+
+  for (const building of project.buildings) {
+    // If we have footprint, check distance to footprint edges
+    if (building.footprint && building.footprint.length >= 3) {
+      // Check if point is inside footprint
+      if (isPointInPolygon(position, building.footprint)) {
+        return building.id;
+      }
+      
+      // Calculate minimum distance to any edge of the footprint
+      for (let i = 0; i < building.footprint.length; i++) {
+        const p1 = building.footprint[i];
+        const p2 = building.footprint[(i + 1) % building.footprint.length];
+        const distResult = distanceToSegment(position, p1, p2);
+        if (distResult.distance < minDistance) {
+          minDistance = distResult.distance;
+          nearestId = building.id;
+        }
+      }
+    } else {
+      // Fallback: check distance to walls of this building
+      const bWalls = project.walls.filter(w => w.buildingId === building.id);
+      for (const w of bWalls) {
+        const center = getWallCenterline(w);
+        const distResult = distanceToSegment(position, center.start, center.end);
+        if (distResult.distance < minDistance) {
+          minDistance = distResult.distance;
+          nearestId = building.id;
+        }
+      }
+    }
+  }
+
+  if (minDistance <= threshold) {
+    return nearestId;
+  }
+  return undefined;
+}
+

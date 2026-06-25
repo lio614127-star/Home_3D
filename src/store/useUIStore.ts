@@ -3,9 +3,12 @@ import { IValidationIssue, SelectedItem } from '../types';
 
 interface UIState {
   themeMode: 'light' | 'dark';
-  mode: 'select' | 'addSite' | 'addWall' | 'addArea' | 'addDoor' | 'addWindow' | 'measure';
+  mode: 'select' | 'addSite' | 'addWall' | 'addArea' | 'addDoor' | 'addWindow' | 'addStructure' | 'addFence' | 'measure' | 'addAsset' | 'aiRegion';
+  pendingStructureType: 'patio' | 'stairs' | 'sideKitchen' | 'garage' | null;
+  pendingAIRegionType: 'rectangle' | 'circle' | null;
+  pendingAssetId: string | null;
   selectedObjectId: string | null;
-  selectedObjectType: 'site' | 'building' | 'wall' | 'area' | 'opening' | 'dimension' | null;
+  selectedObjectType: 'site' | 'building' | 'wall' | 'area' | 'opening' | 'dimension' | 'structure' | 'asset' | 'aiRegion' | null;
   selectedItems: SelectedItem[];
   marqueeStart: { x: number; z: number } | null;
   marqueeEnd: { x: number; z: number } | null;
@@ -30,6 +33,7 @@ interface UIState {
   show3DWalls: boolean;
   show3DGrid: boolean;
   show3DOpenings: boolean;
+  show3DStructures: boolean;
   cameraMode: 'perspective' | 'top';
   
   showAreaName: boolean;
@@ -42,8 +46,11 @@ interface UIState {
   
   setThemeMode: (mode: 'light' | 'dark') => void;
   toggleThemeMode: () => void;
-  setMode: (mode: 'select' | 'addSite' | 'addWall' | 'addArea' | 'addDoor' | 'addWindow' | 'measure') => void;
-  setSelectedObject: (id: string | null, type: 'site' | 'building' | 'wall' | 'area' | 'opening' | 'dimension' | null) => void;
+  setMode: (mode: 'select' | 'addSite' | 'addWall' | 'addArea' | 'addDoor' | 'addWindow' | 'addStructure' | 'addFence' | 'measure' | 'addAsset' | 'aiRegion') => void;
+  setPendingStructureType: (type: 'patio' | 'stairs' | 'sideKitchen' | 'garage' | null) => void;
+  setPendingAIRegionType: (type: 'rectangle' | 'circle' | null) => void;
+  setPendingAssetId: (id: string | null) => void;
+  setSelectedObject: (id: string | null, type: 'site' | 'building' | 'wall' | 'area' | 'opening' | 'dimension' | 'structure' | 'asset' | null) => void;
   setSelectedItems: (items: SelectedItem[]) => void;
   setMarquee: (start: { x: number; z: number } | null, end: { x: number; z: number } | null) => void;
   setToolDefaults: (tool: 'wall' | 'area' | 'door' | 'window' | 'measure', defaults: any) => void;
@@ -56,7 +63,7 @@ interface UIState {
   setShowAreaName: (showAreaName: boolean) => void;
   setShowAreaArea: (showAreaArea: boolean) => void;
   setShowAlignmentGuides: (showAlignmentGuides: boolean) => void;
-  toggle3DLayer: (layer: 'site' | 'areas' | 'walls' | 'grid' | 'openings') => void;
+  toggle3DLayer: (layer: 'site' | 'areas' | 'walls' | 'grid' | 'openings' | 'structures') => void;
   toggle2DDisplay: (key: 'areaName' | 'areaArea' | 'manualDim' | 'openingLabel') => void;
 }
 
@@ -76,6 +83,9 @@ const getInitialBool = (key: string, defaultVal: boolean): boolean => {
 export const useUIStore = create<UIState>((set) => ({
   themeMode: getInitialTheme(),
   mode: 'select',
+  pendingStructureType: null,
+  pendingAIRegionType: null,
+  pendingAssetId: null,
   selectedObjectId: null,
   selectedObjectType: null,
   selectedItems: [],
@@ -106,6 +116,7 @@ export const useUIStore = create<UIState>((set) => ({
   show3DWalls: true,
   show3DGrid: true,
   show3DOpenings: true,
+  show3DStructures: true,
   showManualDimensions: getInitialBool('showManualDimensions', true),
   showOpeningLabels: getInitialBool('showOpeningLabels', true),
   showGrid2D: true,
@@ -115,11 +126,14 @@ export const useUIStore = create<UIState>((set) => ({
     set({ themeMode: mode });
   },
   toggleThemeMode: () => set((state) => {
-    const newMode = state.themeMode === 'light' ? 'dark' : 'light';
-    localStorage.setItem('garden_house_3d_theme', newMode);
-    return { themeMode: newMode };
+    const nextMode = state.themeMode === 'light' ? 'dark' : 'light';
+    localStorage.setItem('garden_house_3d_theme', nextMode);
+    return { themeMode: nextMode };
   }),
   setMode: (mode) => set({ mode, selectedObjectId: null, selectedObjectType: null, selectedItems: [], marqueeStart: null, marqueeEnd: null }),
+  setPendingStructureType: (type) => set({ pendingStructureType: type, mode: type ? 'addStructure' : 'select' }),
+  setPendingAIRegionType: (type) => set({ pendingAIRegionType: type, mode: type ? 'aiRegion' : 'select' }),
+  setPendingAssetId: (id) => set({ pendingAssetId: id, mode: id ? 'addAsset' : 'select' }),
   setSelectedObject: (id, type) => set({ selectedObjectId: id, selectedObjectType: type }),
   setSelectedItems: (items) => set({ selectedItems: items }),
   setMarquee: (start, end) => set({ marqueeStart: start, marqueeEnd: end }),
@@ -146,6 +160,7 @@ export const useUIStore = create<UIState>((set) => ({
       case 'walls': return { show3DWalls: !state.show3DWalls };
       case 'grid': return { show3DGrid: !state.show3DGrid };
       case 'openings': return { show3DOpenings: !state.show3DOpenings };
+      case 'structures': return { show3DStructures: !state.show3DStructures };
     }
     return state;
   }),
