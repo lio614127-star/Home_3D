@@ -59,7 +59,12 @@ const RectangularGrid3D: React.FC<{ width: number; depth: number }> = ({ width, 
 
 export const Scene3D: React.FC = () => {
   const project = useProjectStore(state => state.data);
-  const { show3DSite, show3DRooms, show3DWalls, show3DGrid, show3DOpenings, show3DStructures } = useUIStore();
+  const show3DSite = useUIStore(s => s.show3DSite);
+  const show3DRooms = useUIStore(s => s.show3DRooms);
+  const show3DWalls = useUIStore(s => s.show3DWalls);
+  const show3DGrid = useUIStore(s => s.show3DGrid);
+  const show3DOpenings = useUIStore(s => s.show3DOpenings);
+  const show3DStructures = useUIStore(s => s.show3DStructures);
 
   const cx = project.site.width / 2 || 0;
   const cz = project.site.depth / 2 || 0;
@@ -168,6 +173,10 @@ export const Scene3D: React.FC = () => {
             const building = project.buildings.find(b => b.id === roof.buildingId);
             if (!building) return null;
             return <Roof3D key={roof.id} roof={roof} building={building} />;
+          })}
+
+          {(project.placedAssets || []).map(asset => {
+            return <Asset3D key={asset.id} asset={asset} />;
           })}
 
 

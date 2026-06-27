@@ -7,6 +7,7 @@ import { useTheme } from '../../theme/tokens';
 import { TransformPanel } from './TransformPanel';
 import { NumericInput } from './NumericInput';
 import { getAssetDefinition } from '../../core/assets/catalog';
+import { checkAssetPlacementCollision } from '../../core/assets/assetCollision';
 
 export const PropertiesPanel: React.FC = () => {
   const { selectedObjectId, selectedObjectType, selectedItems, showAreaName, showAreaArea } = useUIStore();
@@ -28,6 +29,19 @@ export const PropertiesPanel: React.FC = () => {
       <div style={{ padding: '15px', fontSize: '13px', boxSizing: 'border-box', width: '100%', color: theme.textPrimary }}>
         <h3 style={{ marginTop: 0 }}>Đã chọn {selectedItems.length} đối tượng</h3>
         <p style={{ color: theme.textSecondary }}>Sử dụng chuột để kéo thả toàn bộ nhóm trên bản vẽ.</p>
+        
+        <div style={{ marginBottom: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <button onClick={() => updatePlacedAsset(asset.id, { rotation: ((asset.rotation || 0) + 90) % 360 })} style={{ padding: '6px', cursor: 'pointer', background: theme.toolbarBg, color: theme.textPrimary, border: '1px solid #ccc', borderRadius: '4px' }}>Xoay 90°</button>
+          <button onClick={() => {
+            const newId = 'asset_' + Date.now();
+            useProjectStore.getState().addPlacedAsset({ ...asset, id: newId, position: { ...asset.position, x: asset.position.x + 0.5, z: asset.position.z + 0.5 } });
+            useUIStore.getState().setSelectedObject(newId, 'asset');
+          }} style={{ padding: '6px', cursor: 'pointer', background: theme.toolbarBg, color: theme.textPrimary, border: '1px solid #ccc', borderRadius: '4px' }}>Nhân bản</button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={() => updatePlacedAsset(asset.id, { scale: { x: 1, y: 1, z: 1 } })} style={{ flex: 1, padding: '6px', cursor: 'pointer', background: theme.toolbarBg, color: theme.textPrimary, border: '1px solid #ccc', borderRadius: '4px' }}>Reset Scale</button>
+            <button onClick={() => updatePlacedAsset(asset.id, { rotation: 0 })} style={{ flex: 1, padding: '6px', cursor: 'pointer', background: theme.toolbarBg, color: theme.textPrimary, border: '1px solid #ccc', borderRadius: '4px' }}>Reset Rotation</button>
+          </div>
+        </div>
         <TransformPanel items={selectedItems} />
       </div>
     );
@@ -708,9 +722,12 @@ export const PropertiesPanel: React.FC = () => {
 
     if (!asset) return null;
     const assetDef = getAssetDefinition(asset.assetId);
-    const baseW = assetDef?.defaultSize.width || 1;
-    const baseH = assetDef?.defaultSize.height || 1;
-    const baseD = assetDef?.defaultSize.depth || 1;
+    
+    const existingAssets = project.placedAssets?.filter(a => a.visible && a.id !== asset.id) || [];
+    const collision = checkAssetPlacementCollision(asset, assetDef, existingAssets, getAssetDefinition);
+    const baseW = assetDef?.defaultSize?.width || 1;
+    const baseH = assetDef?.defaultSize?.height || 1;
+    const baseD = assetDef?.defaultSize?.depth || 1;
     
     const w = (asset.scale?.x || 1) * baseW;
     const h = (asset.scale?.y || 1) * baseH;
@@ -719,8 +736,15 @@ export const PropertiesPanel: React.FC = () => {
     return (
       <div style={{ padding: '15px', fontSize: '13px', boxSizing: 'border-box', width: '100%', color: theme.textPrimary }}>
         <h3 style={{ marginTop: 0, marginBottom: '15px' }}>Nội thất / Asset</h3>
+        {collision.severity === 'error' && (
+          <div style={{ padding: '8px', marginBottom: '10px', background: theme.danger + '20', color: theme.danger, borderRadius: '4px', border: '1px solid ' + theme.danger, fontWeight: 'bold' }}>
+            ⚠️ Vị trí nội thất đang bị chồng lấn
+          </div>
+        )}
         <p style={{ marginBottom: '10px' }}><strong>Tên:</strong> {assetDef?.name}</p>
         <p style={{ marginBottom: '10px' }}><strong>ID:</strong> {asset.id}</p>
+        <p style={{ marginBottom: '10px' }}><strong>Nguồn:</strong> {assetDef?.source || 'Không rõ'}</p>
+        <p style={{ marginBottom: '10px' }}><strong>Danh mục:</strong> {assetDef?.category || 'Chung'}</p>
         <div style={{ marginBottom: '8px', display: 'flex', flexDirection: 'column' }}>
           <label style={{ marginBottom: '4px', fontWeight: '500' }}>Tọa độ X (m)</label>
           <NumericInput value={asset.position.x} onChange={v => updatePlacedAsset(asset.id, { position: { ...asset.position, x: v } })} style={{ padding: '5px', boxSizing: 'border-box', width: '100%', border: '1px solid #ccc', borderRadius: '4px' }} />

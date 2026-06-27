@@ -1,12 +1,24 @@
 import { create } from 'zustand';
 import { IValidationIssue, SelectedItem } from '../types';
 
+export type AssetPlacementMode = {
+  assetId: string;
+  isActive: boolean;
+  pointerX: number;
+  pointerY: number;
+  worldX?: number;
+  worldZ?: number;
+  isOverCanvas: boolean;
+};
+
 interface UIState {
   themeMode: 'light' | 'dark';
+  leftSidebarMode: 'properties' | 'assets' | 'materials';
   mode: 'select' | 'addSite' | 'addWall' | 'addArea' | 'addDoor' | 'addWindow' | 'addStructure' | 'addFence' | 'measure' | 'addAsset' | 'aiRegion';
   pendingStructureType: 'patio' | 'stairs' | 'sideKitchen' | 'garage' | null;
   pendingAIRegionType: 'rectangle' | 'circle' | null;
   pendingAssetId: string | null;
+  assetPlacementMode: AssetPlacementMode;
   selectedObjectId: string | null;
   selectedObjectType: 'site' | 'building' | 'wall' | 'area' | 'opening' | 'dimension' | 'structure' | 'asset' | 'aiRegion' | null;
   selectedItems: SelectedItem[];
@@ -46,10 +58,16 @@ interface UIState {
   
   setThemeMode: (mode: 'light' | 'dark') => void;
   toggleThemeMode: () => void;
+  setLeftSidebarMode: (mode: 'properties' | 'assets' | 'materials') => void;
   setMode: (mode: 'select' | 'addSite' | 'addWall' | 'addArea' | 'addDoor' | 'addWindow' | 'addStructure' | 'addFence' | 'measure' | 'addAsset' | 'aiRegion') => void;
   setPendingStructureType: (type: 'patio' | 'stairs' | 'sideKitchen' | 'garage' | null) => void;
   setPendingAIRegionType: (type: 'rectangle' | 'circle' | null) => void;
   setPendingAssetId: (id: string | null) => void;
+  startAssetPlacement: (assetId: string) => void;
+  updateAssetPlacementPointer: (pointerX: number, pointerY: number) => void;
+  updateAssetPlacementWorld: (worldX: number, worldZ: number, isOverCanvas: boolean) => void;
+  cancelAssetPlacement: () => void;
+  finishAssetPlacement: () => void;
   setSelectedObject: (id: string | null, type: 'site' | 'building' | 'wall' | 'area' | 'opening' | 'dimension' | 'structure' | 'asset' | null) => void;
   setSelectedItems: (items: SelectedItem[]) => void;
   setMarquee: (start: { x: number; z: number } | null, end: { x: number; z: number } | null) => void;
@@ -82,10 +100,28 @@ const getInitialBool = (key: string, defaultVal: boolean): boolean => {
 
 export const useUIStore = create<UIState>((set) => ({
   themeMode: getInitialTheme(),
+  leftSidebarMode: 'properties',
   mode: 'select',
   pendingStructureType: null,
   pendingAIRegionType: null,
   pendingAssetId: null,
+  draggedAssetPositions: {},
+  draggedAssetCollisions: {},
+  setDraggedAssetPosition: (id, x, z) => set(state => ({
+    draggedAssetPositions: { ...state.draggedAssetPositions, [id]: { x, z } }
+  })),
+  clearDraggedAssetPosition: (id) => set(state => {
+    const copy = { ...state.draggedAssetPositions };
+    delete copy[id];
+    return { draggedAssetPositions: copy };
+  }),
+  assetPlacementMode: {
+    assetId: '',
+    isActive: false,
+    pointerX: 0,
+    pointerY: 0,
+    isOverCanvas: false
+  },
   selectedObjectId: null,
   selectedObjectType: null,
   selectedItems: [],
@@ -130,12 +166,39 @@ export const useUIStore = create<UIState>((set) => ({
     localStorage.setItem('garden_house_3d_theme', nextMode);
     return { themeMode: nextMode };
   }),
+  setLeftSidebarMode: (mode) => set({ leftSidebarMode: mode }),
   setMode: (mode) => set({ mode, selectedObjectId: null, selectedObjectType: null, selectedItems: [], marqueeStart: null, marqueeEnd: null }),
   setPendingStructureType: (type) => set({ pendingStructureType: type, mode: type ? 'addStructure' : 'select' }),
   setPendingAIRegionType: (type) => set({ pendingAIRegionType: type, mode: type ? 'aiRegion' : 'select' }),
   setPendingAssetId: (id) => set({ pendingAssetId: id, mode: id ? 'addAsset' : 'select' }),
-  setSelectedObject: (id, type) => set({ selectedObjectId: id, selectedObjectType: type }),
-  setSelectedItems: (items) => set({ selectedItems: items }),
+  startAssetPlacement: (assetId) => {
+    if ((import.meta as any).env?.DEV) console.log('[ASSET PLACE START]', { assetId });
+    set((state) => ({
+      mode: 'addAsset',
+      assetPlacementMode: { ...state.assetPlacementMode, assetId, isActive: true, isOverCanvas: false }
+    }));
+  },
+  updateAssetPlacementPointer: (pointerX, pointerY) => set((state) => ({
+    assetPlacementMode: { ...state.assetPlacementMode, pointerX, pointerY }
+  })),
+  updateAssetPlacementWorld: (worldX, worldZ, isOverCanvas) => set((state) => ({
+    assetPlacementMode: { ...state.assetPlacementMode, worldX, worldZ, isOverCanvas }
+  })),
+  cancelAssetPlacement: () => {
+    if ((import.meta as any).env?.DEV) console.log('[ASSET PLACE CANCEL]');
+    set((state) => ({
+      mode: state.mode === 'addAsset' ? 'select' : state.mode,
+      assetPlacementMode: { ...state.assetPlacementMode, isActive: false, isOverCanvas: false, assetId: '' }
+    }));
+  },
+  finishAssetPlacement: () => {
+    set((state) => ({
+      mode: state.mode === 'addAsset' ? 'select' : state.mode,
+      assetPlacementMode: { ...state.assetPlacementMode, isActive: false, isOverCanvas: false, assetId: '' }
+    }));
+  },
+  setSelectedObject: (id, type) => set({ selectedObjectId: id, selectedObjectType: type, leftSidebarMode: id ? 'properties' : useUIStore.getState().leftSidebarMode }),
+  setSelectedItems: (items) => set({ selectedItems: items, leftSidebarMode: items.length > 0 ? 'properties' : useUIStore.getState().leftSidebarMode }),
   setMarquee: (start, end) => set({ marqueeStart: start, marqueeEnd: end }),
   setToolDefaults: (tool, defaults) => set((state) => ({ toolDefaults: { ...state.toolDefaults, [tool]: { ...(state.toolDefaults as any)[tool], ...defaults } } })),
   setValidationIssues: (issues) => set({ validationIssues: issues }),

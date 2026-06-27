@@ -47,7 +47,7 @@ interface ProjectState {
   addStructure: (structure: Structure) => void;
   updateStructure: (id: string, updates: Partial<Structure>) => void;
   deleteStructure: (id: string) => void;
-  addPlacedAsset: (asset: IPlacedAsset) => void;
+  addPlacedAsset: (assetIdOrAsset: string | IPlacedAsset, options?: Partial<IPlacedAsset>) => void;
   updatePlacedAsset: (id: string, updates: Partial<IPlacedAsset>) => void;
   deletePlacedAsset: (id: string) => void;
   addAIRequest: (request: Partial<IAIRequest> & { type: IAIRequest['type'], category: string }) => void;
@@ -105,6 +105,8 @@ export const useProjectStore = create<ProjectState>()(
     const cloned = JSON.parse(JSON.stringify(state.data));
     return { past: [...state.past, cloned].slice(-50), future: [] };
   }),
+
+
 
   undo: () => set((state) => {
     if (state.past.length === 0) return state;
@@ -566,7 +568,7 @@ export const useProjectStore = create<ProjectState>()(
         const def = getAssetDefinition(a.assetId);
         let assetDx = dx;
         if (def) {
-          const width = (a.scale?.x || 1) * def.defaultSize.width;
+          const width = (a.scale?.x || 1) * (def.defaultSize?.width || 1);
           assetDx = width + 0.2; // width + 0.2m gap
         }
 
@@ -1225,9 +1227,43 @@ export const useProjectStore = create<ProjectState>()(
     };
   }),
 
-  addPlacedAsset: (asset) => set((state) => ({
-    data: { ...state.data, placedAssets: [...(state.data.placedAssets || []), asset] }
-  })),
+  addPlacedAsset: (assetIdOrAsset, options) => set((state) => {
+    if (typeof assetIdOrAsset === 'string') {
+      const assetDef = getAssetDefinition(assetIdOrAsset);
+      if (!assetDef) return state;
+      
+      let center = { x: 0, z: 0 };
+      if (state.data.site) {
+         center = { x: state.data.site.width / 2, z: state.data.site.depth / 2 };
+      }
+      
+      const newAsset: IPlacedAsset = {
+        id: `placed-${Date.now()}-${Math.floor(Math.random()*10000)}`,
+        assetId: assetIdOrAsset,
+        position: { x: center.x, y: 0, z: center.z },
+        rotation: 0,
+        scale: { x: 1, y: 1, z: 1 },
+        visible: true,
+        locked: false,
+        layer: 'default',
+        ...options
+      };
+
+      console.log('[ADD PLACED ASSET]', {
+        assetId: assetIdOrAsset,
+        placedAsset: newAsset,
+        definition: assetDef
+      });
+      
+      return {
+        data: { ...state.data, placedAssets: [...(state.data.placedAssets || []), newAsset] }
+      };
+    } else {
+      return {
+        data: { ...state.data, placedAssets: [...(state.data.placedAssets || []), assetIdOrAsset] }
+      };
+    }
+  }),
 
   updatePlacedAsset: (id, updates) => set((state) => {
     const existingAsset = state.data.placedAssets?.find(a => a.id === id);

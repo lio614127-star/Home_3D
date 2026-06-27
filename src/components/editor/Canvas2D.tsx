@@ -11,6 +11,9 @@ import { RoofLayer } from './RoofLayer';
 import { StructureLayer } from './StructureLayer';
 import { AIRegion2D } from './AIRegion2D';
 import { Asset2D } from './Asset2D';
+import { AssetFootprint } from './AssetFootprint';
+import { getAssetFootprintDefinition, getAssetDefinition } from '../../core/assets/catalog';
+import { checkAssetPlacementCollision } from '../../core/assets/assetCollision';
 import { DimensionLayer, DimensionCAD } from './DimensionLayer';
 import { GridLayer } from './GridLayer';
 import { GuideLayer } from './GuideLayer';
@@ -23,6 +26,7 @@ import { useTheme } from '../../theme/tokens';
 import { WORKSPACE_WIDTH, WORKSPACE_DEPTH } from '../../core/config/workspace';
 
 export const Canvas2D: React.FC = () => {
+
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const PX_PER_METER = 20;
@@ -48,11 +52,93 @@ export const Canvas2D: React.FC = () => {
   const [structureDraftStart, setStructureDraftStart] = useState<{x: number, z: number} | null>(null);
   const [activeFenceId, setActiveFenceId] = useState<string | null>(null);
   const [aiRegionDraftStart, setAiRegionDraftStart] = useState<{x: number, z: number} | null>(null);
+  // === ASSET PLACEMENT MODE ===
+  const { assetPlacementMode, updateAssetPlacementPointer, updateAssetPlacementWorld, finishAssetPlacement, cancelAssetPlacement } = useUIStore();
+
+  React.useEffect(() => {
+    if (!assetPlacementMode.isActive) return;
+
+    const handlePointerMove = (e) => {
+      updateAssetPlacementPointer(e.clientX, e.clientY);
+      
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const isOver = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+        
+        let worldX = undefined;
+        let worldZ = undefined;
+        
+        if (isOver) {
+          const projX = (e.clientX - rect.left - stagePos.x) / (zoom * 20);
+          const projZ = (e.clientY - rect.top - stagePos.y) / (zoom * 20);
+          worldX = projX;
+          worldZ = projZ;
+          
+          if (snapToGrid) {
+            const dynamicGridMinorStep = zoom >= 1.5 ? 0.25 : 0.5;
+            worldX = Math.round(worldX / dynamicGridMinorStep) * dynamicGridMinorStep;
+            worldZ = Math.round(worldZ / dynamicGridMinorStep) * dynamicGridMinorStep;
+          }
+        }
+        
+        if ((import.meta as any).env?.DEV && (Date.now() % 500 < 16)) {
+          console.log('[ASSET PLACE MOVE]', { assetId: assetPlacementMode.assetId, worldX, worldZ, isOverCanvas: isOver });
+        }
+        
+        updateAssetPlacementWorld(worldX, worldZ, isOver);
+      }
+    };
+
+    const handlePointerUp = (e) => {
+      const state = useUIStore.getState().assetPlacementMode;
+      if (!state.isActive) return;
+
+      if (state.isOverCanvas && state.worldX !== undefined && state.worldZ !== undefined) {
+        const definition = getAssetDefinition(state.assetId);
+        const existingAssets = useProjectStore.getState().data.placedAssets?.filter(a => a.visible) || [];
+        const mockAsset: any = { 
+          id: 'temp', 
+          assetId: state.assetId, 
+          position: { x: state.worldX, y: 0, z: state.worldZ },
+          rotation: 0,
+          scale: {x:1, y:1, z:1}
+        };
+        const collision = checkAssetPlacementCollision(mockAsset, definition, existingAssets, getAssetDefinition);
+        
+        if (collision.severity === 'error') {
+           // Do not place if it's an error collision
+           cancelAssetPlacement();
+           return;
+        }
+        
+        if ((import.meta as any).env?.DEV) console.log('[ASSET PLACE COMMIT]', { assetId: state.assetId, worldX: state.worldX, worldZ: state.worldZ });
+        useProjectStore.getState().addPlacedAsset(state.assetId, { 
+          position: { x: state.worldX, y: collision.suggestedY || 0, z: state.worldZ },
+          hostAssetId: collision.suggestedHostAssetId,
+          supportType: collision.suggestedSupportType
+        });
+        finishAssetPlacement();
+      } else {
+        cancelAssetPlacement();
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [assetPlacementMode.isActive, zoom, stagePos, snapToGrid]);
+
+
   const [mousePos, setMousePos] = useState<{x: number, z: number} | null>(null);
   const snappedPointerRef = useRef<{x: number, z: number, type?: SnapCandidate['type']} | null>(null);
   const [lastSnapType, setLastSnapType] = useState<SnapCandidate['type'] | undefined>(undefined);
   const [measureCandidate, setMeasureCandidate] = useState<MeasureCandidate | null>(null);
   const [globalDrag, setGlobalDrag] = useState<{ startX: number, startZ: number, isDragging: boolean } | null>(null);
+    const pendingAssetId = useUIStore(state => state.pendingAssetId);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -71,6 +157,24 @@ export const Canvas2D: React.FC = () => {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.type === 'keydown' && e.code === 'KeyR') {
+        if ((e.target instanceof HTMLInputElement && (e.target.type === 'text' || e.target.type === 'number')) || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) return;
+        const state = useUIStore.getState();
+        if (state.selectedObjectType === 'asset' && state.selectedObjectId) {
+          e.preventDefault();
+          const pState = useProjectStore.getState();
+          const asset = pState.data.placedAssets?.find(a => a.id === state.selectedObjectId);
+          if (asset) {
+            const rotDelta = e.shiftKey ? -90 : 90;
+            const currentRot = asset.rotation || 0;
+            let newRot = (currentRot + rotDelta) % 360;
+            if (newRot < 0) newRot += 360;
+            if ((import.meta as any).env?.DEV) console.log('[ASSET ROTATE]', { placedAssetId: asset.id, oldRotation: currentRot, newRotation: newRot });
+            pState.updatePlacedAsset(asset.id, { rotation: newRot });
+          }
+        }
+      }
+
       if (e.code === 'Space') setIsSpaceDown(e.type === 'keydown');
       if (e.type === 'keydown' && (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey))) {
         if ((e.target instanceof HTMLInputElement && (e.target.type === 'text' || e.target.type === 'number')) || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) return;
@@ -342,8 +446,7 @@ export const Canvas2D: React.FC = () => {
     
     // Adaptive grid step: zoom >= 1.5 -> 0.25m, else 0.5m
     const dynamicGridMinorStep = zoom >= 1.5 ? 0.25 : 0.5;
-    
-    // === Handle Global Drag ===
+
     if (globalDrag?.isDragging) {
       const rawDeltaX = rawProjX - globalDrag.startX;
       const rawDeltaZ = rawProjZ - globalDrag.startZ;
@@ -414,6 +517,8 @@ export const Canvas2D: React.FC = () => {
   };
 
   const handlePointerUp = (e: any) => {
+    isDraggingRef.current = false;
+    
     if (globalDrag?.isDragging) {
       useUIStore.getState().setActiveGuides([]);
       useUIStore.getState().setActiveSnapPoint(null);
@@ -605,26 +710,7 @@ export const Canvas2D: React.FC = () => {
 
     // === ADD ASSET ===
     if (mode === 'addAsset') {
-      const pendingAssetId = useUIStore.getState().pendingAssetId;
-      if (!pendingAssetId) return;
-
-      const newId = `asset_${Date.now()}`;
-      useProjectStore.getState().commitHistory();
-      useProjectStore.getState().addPlacedAsset({
-        id: newId,
-        assetId: pendingAssetId,
-        position: { x: normalizeCoord(projX), z: normalizeCoord(projZ) },
-        rotation: 0,
-        scale: { x: 1, y: 1, z: 1 },
-        visible: true,
-        locked: false
-      });
-      
-      setMode('select');
-      useUIStore.getState().setPendingAssetId(null);
-      setSelectedObject(newId, 'asset');
-      useUIStore.getState().setSelectedItems([{ type: 'asset', id: newId }]);
-      return;
+      return; // Handled by PointerUp
     }
 
     // === ADD AI REGION ===
@@ -1346,8 +1432,6 @@ export const Canvas2D: React.FC = () => {
     return <Group listening={false}>{elements}</Group>;
   };
 
-
-
   const handleWheel = (e: any) => {
     e.evt.preventDefault();
     const stage = e.target.getStage();
@@ -1368,14 +1452,66 @@ export const Canvas2D: React.FC = () => {
     });
   };
 
-  // Calculate visible bounds in meters for infinite grid
+  const renderAssetDragPreview = () => {
+    const assetPlacementMode = useUIStore.getState().assetPlacementMode;
+    if (!assetPlacementMode || !assetPlacementMode.isActive || !assetPlacementMode.isOverCanvas || assetPlacementMode.worldX === undefined || assetPlacementMode.worldZ === undefined) return null;
+    
+    const def = getAssetDefinition(assetPlacementMode.assetId);
+    if (!def) return null;
+
+    const footprintDef = getAssetFootprintDefinition(def);
+    const project = useProjectStore.getState().data;
+    
+    const collisionResult = checkAssetPlacementCollision(
+      { id: 'preview', position: { x: assetPlacementMode.worldX, y: 0, z: assetPlacementMode.worldZ }, rotation: 0, scale: { x: 1, y: 1, z: 1 } },
+      def, project.placedAssets || [], getAssetDefinition
+    );
+
+    let strokeColor = '#27ae60'; // Green for valid floor
+    let fillColor = '#27ae60';
+    
+    if (collisionResult.severity === 'error') {
+       strokeColor = theme.danger;
+       fillColor = theme.danger;
+    } else if (collisionResult.severity === 'none' && collisionResult.suggestedHostAssetId) {
+       strokeColor = '#9b59b6'; // Purple for hosted
+       fillColor = '#9b59b6';
+    }
+
+    return (
+      <Group key="drag-preview" x={(assetPlacementMode.worldX || 0) * PX_PER_METER} y={(assetPlacementMode.worldZ || 0) * PX_PER_METER}>
+        <AssetFootprint
+          kind={footprintDef.kind}
+          width={footprintDef.width}
+          depth={footprintDef.depth}
+          color={fillColor}
+          opacity={0.5}
+          strokeColor={strokeColor}
+          strokeWidth={2}
+          dashed={true}
+          pxPerMeter={PX_PER_METER}
+        />
+      </Group>
+    );
+  };
+
+  // Calculate visible bounds
   const visibleStartX = (-stagePos.x / zoom) / PX_PER_METER;
   const visibleStartY = (-stagePos.y / zoom) / PX_PER_METER;
   const visibleEndX = ((dimensions.width - stagePos.x) / zoom) / PX_PER_METER;
   const visibleEndY = ((dimensions.height - stagePos.y) / zoom) / PX_PER_METER;
 
+  // Throttle drag preview updates to avoid React choke
+  const lastDragPreviewUpdate = React.useRef(0);
+
+
+
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%', background: theme.canvasBg, cursor: isSpaceDown ? 'grab' : 'crosshair' }}>
+    <div 
+      ref={containerRef} 
+      style={{ position: 'relative', width: '100%', height: '100%', background: theme.canvasBg, cursor: isSpaceDown ? 'grab' : 'crosshair' }}
+      
+    >
       {dimensions.width > 0 && dimensions.height > 0 && (
         <Stage 
           width={dimensions.width} 
@@ -1457,11 +1593,12 @@ export const Canvas2D: React.FC = () => {
               offsetY={Math.min(-stagePos.y / zoom, -100)} 
             />
             {renderPreview()}
+            {renderAssetDragPreview()}
           </Group>
         </Layer>
       </Stage>
       )}
-      {(mode === 'addWall') && wallChainAnchor && (
+            {(mode === 'addWall') && wallChainAnchor && (
         <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '8px 16px', borderRadius: '4px', fontSize: '14px', pointerEvents: 'none', zIndex: 10 }}>
           {t("hint.wallChainActive")}
         </div>

@@ -11,7 +11,6 @@ import { useSavedProjectsStore } from '../../store/useSavedProjectsStore';
 import { AssetCatalogPanel } from './AssetCatalogPanel';
 
 export const Toolbar: React.FC = () => {
-  const [showAssetCatalog, setShowAssetCatalog] = React.useState(false);
   const project = useProjectStore(state => state.data);
   const setProject = useProjectStore(state => state.setProject);
   const deleteWall = useProjectStore(state => state.deleteWall);
@@ -137,7 +136,13 @@ export const Toolbar: React.FC = () => {
           <option value="garage">Gara</option>
           <option value="addFence">Hàng rào (vẽ)</option>
         </select>
-        <button onClick={() => setShowAssetCatalog(true)} style={btnStyle(mode === 'addAsset')}>
+        <button 
+          onClick={() => {
+            const currentMode = useUIStore.getState().leftSidebarMode;
+            useUIStore.getState().setLeftSidebarMode(currentMode === 'assets' ? 'properties' : 'assets');
+          }} 
+          style={btnStyle(useUIStore.getState().leftSidebarMode === 'assets')}
+        >
           Thư viện Nội thất
         </button>
         <select 
@@ -246,9 +251,7 @@ export const Toolbar: React.FC = () => {
         )}
       </div>
 
-      {showAssetCatalog && (
-        <AssetCatalogPanel onClose={() => setShowAssetCatalog(false)} />
-      )}
+
     </div>
   );
 };

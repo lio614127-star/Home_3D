@@ -19,6 +19,7 @@ export const Asset2D: React.FC<Asset2DProps> = ({ asset }) => {
   const theme = useTheme();
   
   const isSelected = selectedObjectId === asset.id;
+  const dragCollision = useUIStore(state => state.draggedAssetCollisions[asset.id]);
   const definition = getAssetDefinition(asset.assetId);
 
   if (!definition || !asset.visible) return null;

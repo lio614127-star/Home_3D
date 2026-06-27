@@ -9,6 +9,63 @@ export interface Vector2 {
   z: number;
 }
 
+// --- NEW PLACEMENT RULES ---
+export type AssetPlacementLayer =
+  | 'floor'
+  | 'surface'
+  | 'wall'
+  | 'ceiling'
+  | 'underlay'
+  | 'decor'
+  | 'structural';
+
+export type AssetCollisionMode =
+  | 'solid'
+  | 'soft'
+  | 'ignore'
+  | 'hosted';
+
+export type AssetSupportType =
+  | 'floor'
+  | 'tableTop'
+  | 'bedTop'
+  | 'cabinetTop'
+  | 'shelf'
+  | 'wall'
+  | 'ceiling'
+  | 'rug';
+
+export interface IAssetPlacementRules {
+  layer: AssetPlacementLayer;
+  collisionMode: AssetCollisionMode;
+
+  // Where this asset is allowed to be placed
+  allowedSupportTypes?: AssetSupportType[];
+
+  // What kind of support this asset provides to other assets
+  providesSupportTypes?: AssetSupportType[];
+
+  // Approx support height in meters for objects placed on top
+  supportHeight?: number;
+
+  // Whether this asset blocks other floor objects
+  blocksFloorSpace?: boolean;
+
+  // Whether this asset can overlap with its host
+  allowOverlapWithHost?: boolean;
+
+  // Whether this asset may be placed below other assets
+  canBeUnderFurniture?: boolean;
+
+  // Optional clearance needed around asset in meters
+  clearance?: {
+    front?: number;
+    back?: number;
+    left?: number;
+    right?: number;
+  };
+}
+
 export interface IBaseObject {
   id: string;
   layer: string;
@@ -136,20 +193,37 @@ export type Structure = IStructure | IFenceStructure;
 export interface IAssetDefinition {
   id: string;
   name: string;
-  category: 'furniture' | 'plant' | 'vehicle' | 'decoration' | 'architecture';
-  source: 'primitive' | 'glb' | 'generated';
+  category: 'furniture' | 'plant' | 'vehicle' | 'decoration' | 'architecture' | string;
+  source: 'primitive' | 'glb' | 'generated' | string;
   renderer?: 'box' | 'cylinder' | 'glb' | 'parametric' | string;
   url?: string;
-  model: {
+  model?: {
     type: 'box' | 'cylinder' | 'glb' | string;
     url?: string;
   };
-  defaultSize: {
+  // Phase 2 Generated Asset Fields
+  type?: 'model' | string;
+  format?: string;
+  modelUrl?: string;
+  sourceUrl?: string;
+  license?: string;
+  attributionRequired?: boolean;
+  unit?: string;
+  origin?: string;
+  polyCountLevel?: string;
+  downloadedAt?: string;
+  tags?: string[];
+  
+  // Validation fields
+  runtimeReady?: boolean;
+  validationReason?: string;
+  validatedAt?: string;
+  defaultSize?: {
     width: number;
     depth: number;
     height: number;
   };
-  resizePolicy: 'freeResize' | 'proportionalResize' | 'presetOnly';
+  resizePolicy?: 'freeResize' | 'proportionalResize' | 'presetOnly';
   metadata?: {
     style?: string;
     material?: string;
@@ -157,6 +231,7 @@ export interface IAssetDefinition {
     tags?: string[];
   };
   thumbnail?: string;
+  placementRules?: IAssetPlacementRules;
 }
 
 export interface IPlacedAsset extends IBaseObject {
@@ -171,6 +246,11 @@ export interface IPlacedAsset extends IBaseObject {
     metalness?: number;
   };
   buildingId?: string;
+  
+  // Placement relation
+  hostAssetId?: string;
+  supportType?: AssetSupportType;
+  placementLayer?: AssetPlacementLayer;
 }
 
 export interface IAIRequest extends IBaseObject {

@@ -22,10 +22,15 @@ export const AssetPrimitiveRenderer: React.FC<Props> = ({ definition, asset, col
   const roughness = asset.materialOverride?.roughness ?? 0.8;
   const metalness = asset.materialOverride?.metalness ?? 0.1;
 
-  if (model.type === 'box') {
+  const modelType = definition.model?.type || 'box';
+  const w = definition.defaultSize?.width || 1;
+  const h = definition.defaultSize?.height || 1;
+  const d = definition.defaultSize?.depth || 1;
+
+  if (modelType === 'box') {
     return (
-      <mesh position={[0, defaultSize.height / 2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[defaultSize.width, defaultSize.height, defaultSize.depth]} />
+      <mesh position={[0, h / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[w, h, d]} />
         <meshStandardMaterial 
           color={color} 
           map={texture} 
@@ -36,10 +41,10 @@ export const AssetPrimitiveRenderer: React.FC<Props> = ({ definition, asset, col
     );
   }
 
-  if (model.type === 'cylinder') {
+  if (modelType === 'cylinder') {
     return (
-      <mesh position={[0, defaultSize.height / 2, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[defaultSize.width / 2, defaultSize.width / 2, defaultSize.height, 32]} />
+      <mesh position={[0, h / 2, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[w / 2, w / 2, h, 32]} />
         <meshStandardMaterial 
           color={color} 
           map={texture} 
@@ -52,8 +57,8 @@ export const AssetPrimitiveRenderer: React.FC<Props> = ({ definition, asset, col
 
   // Fallback for unknown primitive
   return (
-    <mesh position={[0, defaultSize.height / 2, 0]} castShadow receiveShadow>
-      <boxGeometry args={[defaultSize.width, defaultSize.height, defaultSize.depth]} />
+    <mesh position={[0, h / 2, 0]} castShadow receiveShadow>
+      <boxGeometry args={[w, h, d]} />
       <meshStandardMaterial color={color} wireframe />
     </mesh>
   );

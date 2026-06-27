@@ -5,20 +5,20 @@ import { PropertiesPanel } from './components/ui/PropertiesPanel';
 import { ValidationPanel } from './components/ui/ValidationPanel';
 import { SavedProjectsPanel } from './components/ui/SavedProjectsPanel';
 import { AIAssistantPanel } from './components/ui/AIAssistantPanel';
-import { AIDebugPanel } from './components/ui/AIDebugPanel';
 import { useI18nStore } from './store/useI18nStore';
 import { useProjectStore } from './store/useProjectStore';
 import { useUIStore } from './store/useUIStore';
 import { useSavedProjectsStore } from './store/useSavedProjectsStore';
 import { ProjectValidator } from './core/validator/ProjectValidator';
 import { Scene3D } from './components/scene3d/Scene3D';
+import { AssetCatalogPanel } from './components/ui/AssetCatalogPanel';
 import { useTheme } from './theme/tokens';
 
 function App() {
   const { t } = useI18nStore();
   const project = useProjectStore(state => state.data);
   const setValidationIssues = useUIStore(state => state.setValidationIssues);
-  const { selectedObjectId, selectedObjectType, setSelectedObject, viewMode } = useUIStore();
+  const { selectedObjectId, selectedObjectType, setSelectedObject, viewMode, leftSidebarMode } = useUIStore();
   const deleteWall = useProjectStore(state => state.deleteWall);
   const deleteArea = useProjectStore(state => state.deleteArea);
   const deleteOpening = useProjectStore(state => state.deleteOpening);
@@ -99,10 +99,16 @@ function App() {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <aside style={{ minWidth: '280px', width: '280px', flexShrink: 0, background: theme.panelBg, borderRight: `1px solid ${theme.panelBorder}`, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
           <div style={{ padding: '10px', background: theme.toolbarBg, borderBottom: `1px solid ${theme.panelBorder}` }}>
-            <h3 style={{ margin: 0, color: theme.textPrimary }}>{t("panel.properties")}</h3>
+            <h3 style={{ margin: 0, color: theme.textPrimary }}>
+              {leftSidebarMode === 'assets' ? 'Thư viện nội thất' : t("panel.properties")}
+            </h3>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-            <PropertiesPanel />
+            {leftSidebarMode === 'assets' ? (
+              <AssetCatalogPanel onClose={() => useUIStore.getState().setLeftSidebarMode('properties')} />
+            ) : (
+              <PropertiesPanel />
+            )}
           </div>
         </aside>
         
@@ -133,7 +139,6 @@ function App() {
         </main>
         
         <AIAssistantPanel />
-        <AIDebugPanel />
         
         <aside style={{ width: '300px', background: theme.panelBg, borderLeft: `1px solid ${theme.panelBorder}`, display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '10px', background: theme.toolbarBg, borderBottom: `1px solid ${theme.panelBorder}` }}>

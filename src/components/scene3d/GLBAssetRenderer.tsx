@@ -2,6 +2,7 @@ import React, { useMemo, useEffect } from 'react';
 import { useGLTF } from '@react-three/drei';
 import { IAssetDefinition, IPlacedAsset } from '../../types';
 import * as THREE from 'three';
+import { getAssetRuntimeTransform } from '../../core/assets/assetNormalization';
 
 interface Props {
   definition: IAssetDefinition;
@@ -10,12 +11,22 @@ interface Props {
 }
 
 export const GLBAssetRenderer: React.FC<Props> = ({ definition, asset, color }) => {
-  const url = definition.url || definition.model.url;
+  const url = definition.modelUrl || definition.url || definition.model?.url;
+
+  if ((import.meta as any).env?.DEV) {
+    console.log('[ASSET3D LOAD]', { assetId: asset.assetId, modelUrl: url });
+    if (url && !url.endsWith('.glb') && !url.endsWith('.gltf')) {
+      console.warn('[ASSET3D WARNING] modelUrl does not end with .glb/.gltf:', url);
+    }
+  }
   
   if (!url) {
+    const w = definition.defaultSize?.width || 1;
+    const h = definition.defaultSize?.height || 1;
+    const d = definition.defaultSize?.depth || 1;
     return (
-      <mesh position={[0, definition.defaultSize.height / 2, 0]}>
-        <boxGeometry args={[definition.defaultSize.width, definition.defaultSize.height, definition.defaultSize.depth]} />
+      <mesh position={[0, h / 2, 0]}>
+        <boxGeometry args={[w, h, d]} />
         <meshStandardMaterial color="red" wireframe />
       </mesh>
     );
@@ -27,25 +38,10 @@ export const GLBAssetRenderer: React.FC<Props> = ({ definition, asset, color }) 
   // Clone the scene so we can mutate materials per instance safely
   const clonedScene = useMemo(() => scene.clone(), [scene]);
 
-  // Compute bounding box to auto-scale
-  const scaleRatio = useMemo(() => {
-    const box = new THREE.Box3().setFromObject(clonedScene);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    
-    // Fallback size to prevent division by zero
-    const w = size.x || 1;
-    const h = size.y || 1;
-    const d = size.z || 1;
-
-    // Calculate ratio to fit inside defaultSize
-    // Assuming the user wants the bounding box to match the defined width/depth/height exactly
-    return [
-      definition.defaultSize.width / w,
-      definition.defaultSize.height / h,
-      definition.defaultSize.depth / d
-    ] as [number, number, number];
-  }, [clonedScene, definition.defaultSize]);
+  // Compute bounding box to auto-scale and center
+  const { positionOffset, finalScale } = useMemo(() => {
+    return getAssetRuntimeTransform(definition, asset, clonedScene);
+  }, [clonedScene, definition, asset.scale]);
 
   // Apply material overrides to the GLB meshes
   useEffect(() => {
@@ -73,10 +69,10 @@ export const GLBAssetRenderer: React.FC<Props> = ({ definition, asset, color }) 
   }, [clonedScene, asset.materialOverride]);
 
   return (
-    <primitive 
-      object={clonedScene} 
-      scale={scaleRatio}
-      // Assuming the pivot of the GLB is at the bottom center. If it's at the center, we might need position adjustments
-    />
+    <group scale={[finalScale.x, finalScale.y, finalScale.z]}>
+      <group position={[positionOffset.x, positionOffset.y, positionOffset.z]}>
+        <primitive object={clonedScene} />
+      </group>
+    </group>
   );
 };
